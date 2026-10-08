@@ -454,7 +454,7 @@ func (s *Server) svc(action string) http.HandlerFunc {
 }
 
 func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Core, Version string }
+	var in struct{ Core, Version, Source string }
 	if !decode(w, r, &in) {
 		return
 	}
@@ -462,7 +462,13 @@ func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "core: singbox или mihomo")
 		return
 	}
-	if err := s.Inst.Start(in.Core, strings.TrimSpace(in.Version), s.St.Get().Download); err != nil {
+	var err error
+	if in.Source == "package" {
+		err = s.Inst.StartPackage(in.Core)
+	} else {
+		err = s.Inst.Start(in.Core, strings.TrimSpace(in.Version), s.St.Get().Download)
+	}
+	if err != nil {
 		fail(w, 409, err.Error())
 		return
 	}

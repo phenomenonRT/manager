@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"corepanel/internal/model"
@@ -353,8 +354,18 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 
 // ---------- установка ----------
 
-// Start запускает установку в фоне. Возвращает ошибку, если установка уже идёт.
+// Start запускает установку с GitHub в фоне. Возвращает ошибку, если установка уже идёт.
 func (in *Installer) Start(core, version string, d model.Download) error {
+	return in.run(core, func(ctx context.Context) (string, error) { return in.install(ctx, core, version, d) })
+}
+
+// StartPackage устанавливает ядро из репозитория пакетов системы (opkg/apk).
+// Пакеты OpenWrt и Entware собраны компактнее релизов GitHub — это выход, когда мало флеш-памяти.
+func (in *Installer) StartPackage(core string) error {
+	return in.run(core, func(ctx context.Context) (string, error) { return in.installPackage(ctx, core) })
+}
+
+func (in *Installer) run(core string, f func(ctx context.Context) (string, error)) error {
 	if core != model.CoreSingbox && core != model.CoreMihomo {
 		return fmt.Errorf("неизвестное ядро «%s»", core)
 	}
@@ -371,7 +382,7 @@ func (in *Installer) Start(core, version string, d model.Download) error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
-		ver, err := in.install(ctx, core, version, d)
+		ver, err := f(ctx)
 		in.Job.set(func(j *Job) {
 			j.Running, j.Finished = false, true
 			if err != nil {
@@ -384,6 +395,10 @@ func (in *Installer) Start(core, version string, d model.Download) error {
 	return nil
 }
 
+func isNoSpace(err error) bool { return errors.Is(err, syscall.ENOSPC) }
+
+// install скачивает релиз и распаковывает его прямо из потока: архив на диск не пишется,
+// поэтому во время установки занято место только под сам бинарник.
 func (in *Installer) install(ctx context.Context, core, version string, d model.Download) (string, error) {
 	c, err := httpClient(d)
 	if err != nil {
@@ -397,27 +412,41 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return "", fmt.Errorf("не удалось создать каталог %s: %v", binDir, err)
 	}
-	if free := platform.FreeBytes(binDir); free > 0 && tg.Size > 0 && free < uint64(tg.Size)*4 {
-		return "", fmt.Errorf("в %s свободно %d МБ — для установки нужно примерно %d МБ. Подключите накопитель и задайте каталог в разделе «Ядро»",
-			binDir, free>>20, (tg.Size*4)>>20)
+	final := filepath.Join(binDir, BinName(core))
+	newBin := final + ".new"
+	// остатки прошлых попыток и старые копии занимают место зря
+	_ = os.Remove(newBin)
+	_ = os.Remove(final + ".bak")
+	if m, _ := filepath.Glob(filepath.Join(binDir, ".dl-*")); len(m) > 0 {
+		for _, f := range m {
+			_ = os.Remove(f)
+		}
+	}
+	// после распаковки ядро занимает примерно 2,5 размера архива; жёсткий минимум — 1,5
+	if free := platform.FreeBytes(binDir); free > 0 && tg.Size > 0 && free < uint64(tg.Size)*3/2 {
+		return "", fmt.Errorf("в %s свободно %d МБ — слишком мало (размер загрузки %d МБ, после распаковки ядро занимает около %d МБ). "+
+			"Подключите накопитель и задайте каталог в разделе «Ядро» либо установите ядро из пакетов системы",
+			binDir, free>>20, tg.Size>>20, (tg.Size*5/2)>>20)
 	}
 
-	in.Job.set(func(j *Job) { j.Stage, j.Message = "download", "Скачиваю "+tg.Name })
-	tmp, err := os.CreateTemp(binDir, ".dl-*")
+	in.Job.set(func(j *Job) { j.Stage, j.Message = "download", "Скачиваю и распаковываю "+tg.Name })
+	err = in.fetchExtract(ctx, c, tg, core, newBin)
+	if isNoSpace(err) {
+		if _, serr := os.Stat(final); serr == nil {
+			// старая и новая версии вместе не помещаются — освобождаем место старой и пробуем ещё раз
+			in.Job.set(func(j *Job) {
+				j.Message, j.Percent = "Места мало — удаляю старую версию и повторяю загрузку", 0
+			})
+			_ = os.Remove(newBin)
+			_ = os.Remove(final)
+			err = in.fetchExtract(ctx, c, tg, core, newBin)
+		}
+	}
 	if err != nil {
-		return "", err
-	}
-	defer os.Remove(tmp.Name())
-	if err := in.download(ctx, c, tg, tmp); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	tmp.Close()
-
-	in.Job.set(func(j *Job) { j.Stage, j.Message, j.Percent = "extract", "Распаковываю…", 90 })
-	newBin := filepath.Join(binDir, BinName(core)+".new")
-	if err := extract(core, tmp.Name(), newBin); err != nil {
-		os.Remove(newBin)
+		_ = os.Remove(newBin)
+		if isNoSpace(err) {
+			return "", fmt.Errorf("в %s не хватило места для ядра. Подключите накопитель и задайте каталог в разделе «Ядро» либо установите ядро из пакетов системы", binDir)
+		}
 		return "", err
 	}
 	if err := os.Chmod(newBin, 0o755); err != nil {
@@ -427,12 +456,8 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 	in.Job.set(func(j *Job) { j.Stage, j.Message, j.Percent = "verify", "Проверяю запуск…", 95 })
 	ver, err := Version(ctx, core, newBin)
 	if err != nil {
-		os.Remove(newBin)
+		_ = os.Remove(newBin)
 		return "", fmt.Errorf("скачанный файл не запускается (возможно, не та архитектура — определено «%s»): %v", in.Info.Arch, err)
-	}
-	final := filepath.Join(binDir, BinName(core))
-	if _, err := os.Stat(final); err == nil {
-		_ = os.Rename(final, final+".bak")
 	}
 	if err := os.Rename(newBin, final); err != nil {
 		return "", err
@@ -453,7 +478,7 @@ func (p *progressWriter) Write(b []byte) (int, error) {
 		p.last = time.Now()
 		pct := 0.0
 		if p.total > 0 {
-			pct = float64(p.done) / float64(p.total) * 85
+			pct = float64(p.done) / float64(p.total) * 90
 		}
 		p.in.Job.set(func(j *Job) {
 			j.Percent = pct
@@ -463,7 +488,8 @@ func (p *progressWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (in *Installer) download(ctx context.Context, c *http.Client, tg target, out *os.File) error {
+// fetchExtract качает архив и пишет распакованный бинарник в dst (sing-box: tar.gz, Mihomo: gz).
+func (in *Installer) fetchExtract(ctx context.Context, c *http.Client, tg target, core, dst string) error {
 	req, _ := http.NewRequestWithContext(ctx, "GET", tg.URL, nil)
 	req.Header.Set("User-Agent", "corepanel")
 	resp, err := c.Do(req)
@@ -478,51 +504,106 @@ func (in *Installer) download(ctx context.Context, c *http.Client, tg target, ou
 	if total <= 0 {
 		total = tg.Size
 	}
-	n, err := io.Copy(out, io.TeeReader(resp.Body, &progressWriter{in: in, total: total}))
-	if err != nil {
-		return fmt.Errorf("обрыв загрузки: %v", err)
-	}
-	if total > 0 && n != total {
-		return fmt.Errorf("файл скачан не полностью (%d из %d байт)", n, total)
-	}
-	return nil
-}
-
-// extract достаёт бинарник из архива (sing-box: tar.gz, Mihomo: gz).
-func extract(core, archive, dst string) error {
-	f, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
+	gz, err := gzip.NewReader(io.TeeReader(resp.Body, &progressWriter{in: in, total: total}))
 	if err != nil {
 		return fmt.Errorf("архив повреждён: %v", err)
 	}
 	defer gz.Close()
 
+	var src io.Reader = gz
+	if core == model.CoreSingbox {
+		tr := tar.NewReader(gz)
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				return errors.New("в архиве нет файла sing-box")
+			}
+			if err != nil {
+				return fmt.Errorf("обрыв загрузки или архив повреждён: %v", err)
+			}
+			if h.Typeflag == tar.TypeReg && path.Base(h.Name) == "sing-box" {
+				src = tr
+				break
+			}
+		}
+	}
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-
-	if core == model.CoreMihomo {
-		_, err = io.Copy(out, gz)
-		return err
-	}
-	tr := tar.NewReader(gz)
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			return errors.New("в архиве нет файла sing-box")
-		}
-		if err != nil {
-			return fmt.Errorf("архив повреждён: %v", err)
-		}
-		if h.Typeflag == tar.TypeReg && path.Base(h.Name) == "sing-box" {
-			_, err = io.Copy(out, tr)
+	if _, err := io.Copy(out, src); err != nil {
+		out.Close()
+		if isNoSpace(err) {
 			return err
 		}
+		return fmt.Errorf("обрыв загрузки: %v", err)
 	}
+	return out.Close()
+}
+
+// ---------- установка из пакетов системы ----------
+
+// PackageNames — имена пакетов ядер в репозиториях OpenWrt и Entware (пробуются по порядку).
+var PackageNames = map[string][]string{
+	model.CoreSingbox: {"sing-box", "sing-box-go"},
+	model.CoreMihomo:  {"mihomo", "clash-meta"},
+}
+
+func pkgCommands() (update, install []string, err error) {
+	for _, dir := range []string{"/opt/bin", "/opt/sbin"} { // Entware
+		if cur := os.Getenv("PATH"); !strings.Contains(cur, dir) {
+			_ = os.Setenv("PATH", cur+":"+dir)
+		}
+	}
+	if _, e := exec.LookPath("opkg"); e == nil {
+		return []string{"opkg", "update"}, []string{"opkg", "install"}, nil
+	}
+	if _, e := exec.LookPath("apk"); e == nil {
+		return []string{"apk", "update"}, []string{"apk", "add"}, nil
+	}
+	return nil, nil, errors.New("в системе нет opkg или apk — установка из пакетов недоступна")
+}
+
+func lastLines(s string, n int) string {
+	ls := strings.Split(strings.TrimSpace(s), "\n")
+	if len(ls) > n {
+		ls = ls[len(ls)-n:]
+	}
+	return strings.Join(ls, " | ")
+}
+
+func (in *Installer) installPackage(ctx context.Context, core string) (string, error) {
+	upd, ins, err := pkgCommands()
+	if err != nil {
+		return "", err
+	}
+	in.Job.set(func(j *Job) {
+		j.Stage, j.Message, j.Percent = "download", "Обновляю список пакетов…", 10
+	})
+	if out, err := exec.CommandContext(ctx, upd[0], upd[1:]...).CombinedOutput(); err != nil {
+		return "", fmt.Errorf("%s не смог обновить список пакетов (нет интернета или DNS?): %s", upd[0], lastLines(string(out), 3))
+	}
+	var lastErr string
+	for i, name := range PackageNames[core] {
+		in.Job.set(func(j *Job) {
+			j.Message, j.Percent = "Устанавливаю пакет "+name+"…", float64(40+i*20)
+		})
+		out, err := exec.CommandContext(ctx, ins[0], append(append([]string{}, ins[1:]...), name)...).CombinedOutput()
+		if err != nil {
+			lastErr = fmt.Sprintf("%s: %s", name, lastLines(string(out), 3))
+			continue
+		}
+		bin, lerr := exec.LookPath(BinName(core))
+		if lerr != nil {
+			lastErr = name + ": пакет установлен, но файл " + BinName(core) + " не найден в PATH"
+			continue
+		}
+		in.Job.set(func(j *Job) { j.Stage, j.Message, j.Percent = "verify", "Проверяю запуск…", 95 })
+		ver, verr := Version(ctx, core, bin)
+		if verr != nil {
+			return "", verr
+		}
+		return ver + " (из пакета " + name + ")", nil
+	}
+	return "", fmt.Errorf("пакет ядра не установлен. %s. В репозитории этой системы может не быть такого пакета — тогда используйте установку с GitHub на накопитель", lastLines(lastErr, 1))
 }

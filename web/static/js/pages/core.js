@@ -29,6 +29,7 @@ export default async function (root) {
       const ver = { v: '' };
       const sel = s.core === id;
       const btn = h('button', { class: 'btn primary', onclick: (e) => { e.stopPropagation(); install(id, ver.v); } }, info.installed ? 'Обновить' : 'Установить');
+      const pkgBtn = h('button', { class: 'btn', title: 'Ставит пакет из репозитория OpenWrt/Entware (opkg или apk). Сборки из репозитория обычно компактнее релизов GitHub — подходит, если мало свободной памяти.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы');
       const pick = h('input', { type: 'radio', name: 'core', checked: sel, 'aria-label': 'Использовать ' + c.name, onchange: () => { s.core = id; st.touch(); draw(); } });
       cards.append(h('div', { class: 'card corecard' + (sel ? ' sel' : ''), onclick: (e) => { if (e.target.closest('button,input,label')) return; pick.click(); } },
         h('div', { class: 'row' }, h('label', { class: 'row', style: 'cursor:pointer' }, pick, h('b', { style: 'font-size:16px' }, c.name)),
@@ -36,12 +37,12 @@ export default async function (root) {
         h('p', { class: 'mute' }, c.tag),
         h('ul', c.pros.map((p) => h('li', p))),
         h('dl', { class: 'kv', style: 'margin:8px 0' }, h('dt', 'Версия'), h('dd', info.version || '—'), h('dt', 'Путь'), h('dd', { class: 'mono' }, info.path || '—')),
-        h('div', { class: 'row' }, h('input', { type: 'text', style: 'flex:1;min-width:120px', placeholder: 'версия (пусто — последняя)', 'aria-label': 'Версия ' + c.name, spellcheck: 'false', oninput: (e) => { ver.v = e.target.value.trim(); } }), btn)));
+        h('div', { class: 'row' }, h('input', { type: 'text', style: 'flex:1;min-width:120px', placeholder: 'версия (пусто — последняя)', 'aria-label': 'Версия ' + c.name, spellcheck: 'false', oninput: (e) => { ver.v = e.target.value.trim(); } }), btn, pkgBtn)));
     }
   }
 
-  async function install(core, version) {
-    try { await post('api/core/install', { core, version }); } catch (e) { toastErr(e); return; }
+  async function install(core, version, source) {
+    try { await post('api/core/install', { core, version, source: source || 'github' }); } catch (e) { toastErr(e); return; }
     toast('Загрузка начата', 'ok'); poll();
   }
   function poll() {

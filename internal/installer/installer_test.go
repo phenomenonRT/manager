@@ -1,6 +1,15 @@
 package installer
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -79,4 +88,67 @@ func TestStartDoesNotCrash(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("установка не завершилась")
+}
+
+func serveArchive(t *testing.T, name string, data []byte) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		_, _ = w.Write(data)
+	}))
+}
+
+func gz(t *testing.T, b []byte) []byte {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, _ = w.Write(b)
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+// Распаковка идёт из потока, без промежуточного архива на диске.
+func TestFetchExtractStream(t *testing.T) {
+	payload := bytes.Repeat([]byte("ELF-bin"), 50000)
+
+	// Mihomo: просто gzip
+	srv := serveArchive(t, "m.gz", gz(t, payload))
+	defer srv.Close()
+	in := New(platform.Info{Arch: "amd64"})
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "mihomo.new")
+	if err := in.fetchExtract(context.Background(), srv.Client(), target{URL: srv.URL}, model.CoreMihomo, dst); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dst); !bytes.Equal(b, payload) {
+		t.Fatal("содержимое mihomo не совпало")
+	}
+
+	// sing-box: tar.gz, нужный файл внутри подкаталога
+	var tb bytes.Buffer
+	tw := tar.NewWriter(&tb)
+	_ = tw.WriteHeader(&tar.Header{Name: "sing-box-1.0/LICENSE", Mode: 0o644, Size: 3, Typeflag: tar.TypeReg})
+	_, _ = tw.Write([]byte("lic"))
+	_ = tw.WriteHeader(&tar.Header{Name: "sing-box-1.0/sing-box", Mode: 0o755, Size: int64(len(payload)), Typeflag: tar.TypeReg})
+	_, _ = tw.Write(payload)
+	_ = tw.Close()
+	srv2 := serveArchive(t, "s.tgz", gz(t, tb.Bytes()))
+	defer srv2.Close()
+	dst2 := filepath.Join(dir, "sing-box.new")
+	if err := in.fetchExtract(context.Background(), srv2.Client(), target{URL: srv2.URL}, model.CoreSingbox, dst2); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dst2); !bytes.Equal(b, payload) {
+		t.Fatal("содержимое sing-box не совпало")
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, ".dl-*")); len(m) != 0 {
+		t.Fatal("архив не должен сохраняться на диск")
+	}
+
+	// оборванный поток должен давать ошибку
+	full := gz(t, payload)
+	srv3 := serveArchive(t, "cut.gz", full[:len(full)/2])
+	defer srv3.Close()
+	if err := in.fetchExtract(context.Background(), srv3.Client(), target{URL: srv3.URL}, model.CoreMihomo, filepath.Join(dir, "cut")); err == nil {
+		t.Fatal("ожидалась ошибка для обрезанного архива")
+	}
 }
