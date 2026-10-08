@@ -28,6 +28,7 @@ import (
 	"corepanel/internal/installer"
 	"corepanel/internal/model"
 	"corepanel/internal/platform"
+	"corepanel/internal/podkop"
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
 	"corepanel/web"
@@ -41,6 +42,7 @@ type Server struct {
 	St      *store.Store
 	Sup     *supervisor.Supervisor
 	Inst    *installer.Installer
+	Podkop  *podkop.Manager
 
 	mu    sync.Mutex
 	key   []byte // ключ подписи сессий (хранится на диске — вход переживает перезапуск панели)
@@ -53,7 +55,7 @@ type failure struct {
 }
 
 func New(version string, info platform.Info, st *store.Store, sup *supervisor.Supervisor, inst *installer.Installer) *Server {
-	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst,
+	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Podkop: podkop.New(info),
 		key: loadKey(st.Dir()), fails: map[string]*failure{}}
 }
 
@@ -139,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "firewall/preview", s.fwPreview, true)
 	api("GET", "logs", s.logs, true)
 	api("GET", "logs/stream", s.logStream, true)
+	api("GET", "podkop", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Podkop.Status(r.Context())) }, true)
+	api("POST", "podkop/{action}", s.podkopAction, true)
 	api("GET", "features", func(w http.ResponseWriter, r *http.Request) {
 		ok(w, map[string]any{"categories": features.Catalog()})
 	}, true)
@@ -437,6 +441,10 @@ func (s *Server) svc(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		set := s.St.Get()
 		var err error
+		if (action == "start" || action == "restart") && podkop.IsRunning(r.Context()) {
+			fail(w, 409, "Работает Podkop: он тоже управляет sing-box, DNS и правилами nft, одновременно с ядром панели их запускать нельзя. Остановите Podkop на странице «Podkop».")
+			return
+		}
 		switch action {
 		case "start":
 			err = s.Sup.Start(set)
@@ -645,4 +653,32 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	rp.ServeHTTP(w, r)
+}
+
+// ---------- Podkop ----------
+
+func (s *Server) podkopAction(w http.ResponseWriter, r *http.Request) {
+	var err error
+	switch a := r.PathValue("action"); a {
+	case "install":
+		err = s.Podkop.Install(false)
+	case "install-mirror":
+		err = s.Podkop.Install(true)
+	case "remove":
+		err = s.Podkop.Remove()
+	case "start", "restart":
+		// Podkop и ядро панели перехватывают DNS и трафик — вместе не запускаем.
+		if st := s.Sup.Status(); st.State == "running" {
+			fail(w, 409, "Сейчас работает ядро панели. Остановите его на странице «Обзор», затем запускайте Podkop.")
+			return
+		}
+		_, err = s.Podkop.Control(r.Context(), a)
+	default:
+		_, err = s.Podkop.Control(r.Context(), a)
+	}
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	ok(w, s.Podkop.Status(r.Context()))
 }

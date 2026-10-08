@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,5 +151,31 @@ func TestFetchExtractStream(t *testing.T) {
 	defer srv3.Close()
 	if err := in.fetchExtract(context.Background(), srv3.Client(), target{URL: srv3.URL}, model.CoreMihomo, filepath.Join(dir, "cut")); err == nil {
 		t.Fatal("ожидалась ошибка для обрезанного архива")
+	}
+}
+
+func TestPickAssetsOrder(t *testing.T) {
+	names := []string{
+		"sing-box-1.12.0-linux-arm64-glibc.tar.gz", "sing-box-1.12.0-linux-arm64-musl.tar.gz",
+		"sing-box-1.12.0-linux-arm64.tar.gz", "sing-box-1.12.0-windows-amd64.zip",
+	}
+	got, err := PickAssets(model.CoreSingbox, "arm64", names)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"sing-box-1.12.0-linux-arm64.tar.gz", "sing-box-1.12.0-linux-arm64-musl.tar.gz", "sing-box-1.12.0-linux-arm64-glibc.tar.gz"}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("порядок: %v", got)
+	}
+}
+
+func TestDiagnoseBinary(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "x")
+	_ = os.WriteFile(f, []byte("not elf"), 0o755)
+	if d := DiagnoseBinary(f); !strings.Contains(d, "ELF") {
+		t.Fatalf("диагностика: %s", d)
+	}
+	if d := DiagnoseBinary(os.Args[0]); d == "" {
+		t.Fatal("пустая диагностика для ELF")
 	}
 }

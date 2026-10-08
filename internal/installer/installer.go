@@ -5,6 +5,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"debug/elf"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,11 +89,12 @@ func assetVariant(core, name string) (string, bool) {
 	return m[1], true
 }
 
-// PickAsset выбирает из списка имён релизных файлов подходящий под архитектуру.
-func PickAsset(core, arch string, names []string) (string, error) {
+// PickAssets возвращает подходящие архитектуре релизные файлы по убыванию приоритета
+// (сначала статическая сборка, затем musl и glibc): если первая не запустится, пробуем следующую.
+func PickAssets(core, arch string, names []string) ([]string, error) {
 	want, ok := variants[core][arch]
 	if !ok {
-		return "", fmt.Errorf("архитектура «%s» не поддерживается установщиком", arch)
+		return nil, fmt.Errorf("архитектура «%s» не поддерживается установщиком", arch)
 	}
 	have := map[string]string{}
 	for _, n := range names {
@@ -102,12 +104,25 @@ func PickAsset(core, arch string, names []string) (string, error) {
 			}
 		}
 	}
+	var out []string
 	for _, w := range want {
 		if n, ok := have[w]; ok {
-			return n, nil
+			out = append(out, n)
 		}
 	}
-	return "", fmt.Errorf("в релизе нет сборки %s для архитектуры «%s»", BinName(core), arch)
+	if len(out) == 0 {
+		return nil, fmt.Errorf("в релизе нет сборки %s для архитектуры «%s»", BinName(core), arch)
+	}
+	return out, nil
+}
+
+// PickAsset выбирает самый предпочтительный файл.
+func PickAsset(core, arch string, names []string) (string, error) {
+	all, err := PickAssets(core, arch, names)
+	if err != nil {
+		return "", err
+	}
+	return all[0], nil
 }
 
 // NoBuildHint — подсказка, если готовой сборки нет.
@@ -286,7 +301,7 @@ type target struct {
 }
 
 // resolve находит файл для загрузки: сначала через GitHub API, затем по шаблону имени.
-func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Download, core, version string) (target, error) {
+func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Download, core, version string) ([]target, error) {
 	repo := Repo[core]
 	api := "https://api.github.com/repos/" + repo + "/releases/latest"
 	if version != "" {
@@ -306,14 +321,20 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 		for _, a := range rel.Assets {
 			names = append(names, a.Name)
 		}
-		name, err := PickAsset(core, in.Info.Arch, names)
+		picked, err := PickAssets(core, in.Info.Arch, names)
 		if err != nil {
-			return target{}, fmt.Errorf("%v. %s", err, NoBuildHint(core, in.Info.OS))
+			return nil, fmt.Errorf("%v. %s", err, NoBuildHint(core, in.Info.OS))
 		}
-		for _, a := range rel.Assets {
-			if a.Name == name {
-				return target{URL: withMirror(d, a.URL), Name: name, Size: a.Size, Version: strings.TrimPrefix(rel.Tag, "v")}, nil
+		var out []target
+		for _, name := range picked {
+			for _, a := range rel.Assets {
+				if a.Name == name {
+					out = append(out, target{URL: withMirror(d, a.URL), Name: name, Size: a.Size, Version: strings.TrimPrefix(rel.Tag, "v")})
+				}
 			}
+		}
+		if len(out) > 0 {
+			return out, nil
 		}
 	}
 
@@ -322,7 +343,7 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 	if tag == "" {
 		t, err := resolveLatestTag(ctx, c, d, repo)
 		if err != nil {
-			return target{}, fmt.Errorf("GitHub недоступен (API: %v; редирект: %v). Задайте зеркало или прокси в разделе «Ядро»", apiErr, err)
+			return nil, fmt.Errorf("GitHub недоступен (API: %v; редирект: %v). Задайте зеркало или прокси в разделе «Ядро»", apiErr, err)
 		}
 		tag = t
 	}
@@ -330,6 +351,7 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 		tag = "v" + tag
 	}
 	ver := strings.TrimPrefix(tag, "v")
+	var out []target
 	for _, v := range variants[core][in.Info.Arch] {
 		var name string
 		if core == model.CoreSingbox {
@@ -346,10 +368,13 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 		}
 		resp.Body.Close()
 		if resp.StatusCode == 200 {
-			return target{URL: u, Name: name, Size: resp.ContentLength, Version: ver}, nil
+			out = append(out, target{URL: u, Name: name, Size: resp.ContentLength, Version: ver})
 		}
 	}
-	return target{}, fmt.Errorf("не найден файл релиза %s для архитектуры «%s». %s", BinName(core), in.Info.Arch, NoBuildHint(core, in.Info.OS))
+	if len(out) == 0 {
+		return nil, fmt.Errorf("не найден файл релиза %s для архитектуры «%s». %s", BinName(core), in.Info.Arch, NoBuildHint(core, in.Info.OS))
+	}
+	return out, nil
 }
 
 // ---------- установка ----------
@@ -397,14 +422,18 @@ func (in *Installer) run(core string, f func(ctx context.Context) (string, error
 
 func isNoSpace(err error) bool { return errors.Is(err, syscall.ENOSPC) }
 
+// notRunnable — скачанный файл не запускается (не тот загрузчик/архитектура): можно пробовать другую сборку.
+type notRunnable struct{ error }
+
 // install скачивает релиз и распаковывает его прямо из потока: архив на диск не пишется,
 // поэтому во время установки занято место только под сам бинарник.
+// Если сборка не запускается (например, glibc на musl-системе), пробуется следующая.
 func (in *Installer) install(ctx context.Context, core, version string, d model.Download) (string, error) {
 	c, err := httpClient(d)
 	if err != nil {
 		return "", err
 	}
-	tg, err := in.resolve(ctx, c, d, core, version)
+	tgs, err := in.resolve(ctx, c, d, core, version)
 	if err != nil {
 		return "", err
 	}
@@ -412,6 +441,26 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return "", fmt.Errorf("не удалось создать каталог %s: %v", binDir, err)
 	}
+	var fails []string
+	for _, tg := range tgs {
+		ver, err := in.installOne(ctx, c, core, tg, binDir)
+		if err == nil {
+			return ver, nil
+		}
+		var nr notRunnable
+		if !errors.As(err, &nr) {
+			return "", err
+		}
+		fails = append(fails, tg.Name+": "+err.Error())
+		in.Job.set(func(j *Job) {
+			j.Message, j.Percent = "Сборка не запускается, пробую другую…", 0
+		})
+	}
+	return "", fmt.Errorf("ни одна из сборок не запустилась на этой системе (архитектура «%s»). %s. "+
+		"Попробуйте «Из пакетов системы» или укажите свой бинарник в разделе «Ядро»", in.Info.Arch, strings.Join(fails, "; "))
+}
+
+func (in *Installer) installOne(ctx context.Context, c *http.Client, core string, tg target, binDir string) (string, error) {
 	final := filepath.Join(binDir, BinName(core))
 	newBin := final + ".new"
 	// остатки прошлых попыток и старые копии занимают место зря
@@ -430,7 +479,7 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 	}
 
 	in.Job.set(func(j *Job) { j.Stage, j.Message = "download", "Скачиваю и распаковываю "+tg.Name })
-	err = in.fetchExtract(ctx, c, tg, core, newBin)
+	err := in.fetchExtract(ctx, c, tg, core, newBin)
 	if isNoSpace(err) {
 		if _, serr := os.Stat(final); serr == nil {
 			// старая и новая версии вместе не помещаются — освобождаем место старой и пробуем ещё раз
@@ -456,13 +505,38 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 	in.Job.set(func(j *Job) { j.Stage, j.Message, j.Percent = "verify", "Проверяю запуск…", 95 })
 	ver, err := Version(ctx, core, newBin)
 	if err != nil {
+		why := DiagnoseBinary(newBin)
 		_ = os.Remove(newBin)
-		return "", fmt.Errorf("скачанный файл не запускается (возможно, не та архитектура — определено «%s»): %v", in.Info.Arch, err)
+		return "", notRunnable{fmt.Errorf("файл не запускается: %s", why)}
 	}
 	if err := os.Rename(newBin, final); err != nil {
 		return "", err
 	}
 	return ver, nil
+}
+
+// DiagnoseBinary объясняет, почему ELF-файл не запускается: чужая архитектура или нет загрузчика.
+func DiagnoseBinary(path string) string {
+	f, err := elf.Open(path)
+	if err != nil {
+		return "это не исполняемый ELF-файл (" + err.Error() + ")"
+	}
+	defer f.Close()
+	arch := f.Machine.String()
+	bits := "32-бит"
+	if f.Class == elf.ELFCLASS64 {
+		bits = "64-бит"
+	}
+	if s := f.Section(".interp"); s != nil {
+		if b, err := s.Data(); err == nil {
+			interp := strings.TrimRight(string(b), "\x00")
+			if _, err := os.Stat(interp); err != nil {
+				return fmt.Sprintf("сборка %s %s динамическая и требует загрузчик %s, которого нет в системе (glibc-сборка на musl/uClibc?)", arch, bits, interp)
+			}
+			return fmt.Sprintf("сборка %s %s не запустилась, хотя загрузчик %s есть — вероятно, не хватает библиотек", arch, bits, interp)
+		}
+	}
+	return fmt.Sprintf("статическая сборка %s %s не запустилась — вероятно, она не подходит процессору или ядру системы (проверьте `uname -m`)", arch, bits)
 }
 
 type progressWriter struct {

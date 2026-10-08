@@ -134,3 +134,20 @@ func TestSessionSurvivesRestart(t *testing.T) {
 		t.Fatalf("после перезапуска сессия потеряна: %d", r.StatusCode)
 	}
 }
+
+func TestPodkopStatusAndGuard(t *testing.T) {
+	ts, pw := newTest(t)
+	jar, _ := cookiejarNew()
+	c := &http.Client{Jar: jar}
+	do(t, c, "POST", ts.URL+"/api/login", `{"username":"admin","password":"`+pw+`"}`)
+	r, out := do(t, c, "GET", ts.URL+"/api/podkop", "")
+	if r.StatusCode != 200 || !strings.Contains(out, `"supported":false`) {
+		t.Fatalf("не-OpenWrt должен возвращать supported=false: %d %s", r.StatusCode, out)
+	}
+	if r, _ := do(t, c, "POST", ts.URL+"/api/podkop/install", "{}"); r.StatusCode != 400 {
+		t.Fatalf("установка вне OpenWrt должна отказывать: %d", r.StatusCode)
+	}
+	if r, _ := do(t, c, "POST", ts.URL+"/api/podkop/bogus", "{}"); r.StatusCode != 400 {
+		t.Fatalf("неизвестное действие: %d", r.StatusCode)
+	}
+}

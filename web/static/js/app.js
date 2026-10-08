@@ -6,7 +6,7 @@ const S = st.S;
 const ROUTES = [
   ['dashboard', 'Обзор'], ['core', 'Ядро'], ['nodes', 'Узлы и VPN'], ['groups', 'Группы'],
   ['routing', 'Маршрутизация'], ['dns', 'DNS'], ['network', 'Входящие, TUN, сеть'],
-  ['config', 'Конфигурация'], ['logs', 'Логи'], ['features', 'Справочник функций'], ['system', 'Система'],
+  ['config', 'Конфигурация'], ['podkop', 'Podkop'], ['logs', 'Логи'], ['features', 'Справочник функций'], ['system', 'Система'],
 ];
 const app = document.getElementById('app');
 let main = null, barEl = null, statusTimer = 0, cleanup = null, token = 0, started = false, unsub = null;
