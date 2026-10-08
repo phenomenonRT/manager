@@ -1,0 +1,62 @@
+name: Сборка corepanel
+
+# Запуск вручную: вкладка Actions → «Сборка corepanel» → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия (например 0.1.2)"
+        required: true
+        default: "0.1.1"
+      release:
+        description: "Создать GitHub Release с файлами"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Проверка (vet и тесты)
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+
+      - name: Сборка бинарников (8 архитектур)
+        run: scripts/build.sh "${{ inputs.version }}"
+
+      - name: Сборка пакетов .ipk (OpenWrt и Entware)
+        run: scripts/mkipk.sh "${{ inputs.version }}"
+
+      - name: Подготовка файлов и контрольные суммы
+        run: |
+          mkdir -p out
+          cp dist/corepanel-linux-* out/
+          cp dist/ipk/*.ipk out/
+          cd out && sha256sum * > SHA256SUMS.txt && ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corepanel-${{ inputs.version }}
+          path: out/*
+          retention-days: 30
+
+      - name: GitHub Release
+        if: ${{ inputs.release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" out/* \
+            --title "corepanel ${{ inputs.version }}" \
+            --notes "Бинарники: corepanel-linux-<arch>. Пакеты: corepanel_<версия>_<arch>_<openwrt|entware>.ipk. Какой выбрать — в README." \
+            --target "${{ github.sha }}"
