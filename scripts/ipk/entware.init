@@ -1,0 +1,8 @@
+#!/bin/sh
+PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+case "$1" in
+  start)   (nohup /opt/sbin/corepanel run >/opt/var/log/corepanel.log 2>&1 &); echo "corepanel запущен" ;;
+  stop)    killall corepanel 2>/dev/null; echo "corepanel остановлен" ;;
+  restart) "$0" stop; sleep 1; "$0" start ;;
+  *) echo "Использование: $0 {start|stop|restart}"; exit 1 ;;
+esac
