@@ -32,6 +32,18 @@ var Repo = map[string]string{
 	model.CoreMihomo:  "MetaCubeX/mihomo",
 }
 
+// NeedMB — сколько места занимает распакованное ядро (оценка, МБ). Панель блокирует
+// установку с GitHub, если свободного места меньше.
+var NeedMB = map[string]int{model.CoreSingbox: 50, model.CoreMihomo: 35}
+
+// InstalledMB — размер уже скачанной панелью копии ядра в каталоге установки (МБ): при обновлении это место освободится.
+func (in *Installer) InstalledMB(core string, d model.Download) int {
+	if st, err := os.Stat(filepath.Join(in.BinDir(d), BinName(core))); err == nil {
+		return int(st.Size() >> 20)
+	}
+	return 0
+}
+
 // BinName — имя исполняемого файла.
 func BinName(core string) string {
 	if core == model.CoreMihomo {
@@ -129,11 +141,11 @@ func PickAsset(core, arch string, names []string) (string, error) {
 func NoBuildHint(core string, osName string) string {
 	switch osName {
 	case platform.OpenWrt:
-		return fmt.Sprintf("Установите пакет из репозитория: opkg update && opkg install %s — затем укажите путь к бинарнику в разделе «Ядро».", BinName(core))
+		return fmt.Sprintf("Установите пакет из репозитория: opkg update && opkg install %s — затем укажите путь к бинарнику в разделе «Компоненты».", BinName(core))
 	case platform.Keenetic:
-		return fmt.Sprintf("Попробуйте пакет Entware: opkg update && opkg install %s — затем укажите путь к бинарнику в разделе «Ядро».", BinName(core))
+		return fmt.Sprintf("Попробуйте пакет Entware: opkg update && opkg install %s — затем укажите путь к бинарнику в разделе «Компоненты».", BinName(core))
 	}
-	return "Соберите ядро самостоятельно или укажите путь к своему бинарнику в разделе «Ядро»."
+	return "Соберите ядро самостоятельно или укажите путь к своему бинарнику в разделе «Компоненты»."
 }
 
 // ---------- задача установки ----------
@@ -343,7 +355,7 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 	if tag == "" {
 		t, err := resolveLatestTag(ctx, c, d, repo)
 		if err != nil {
-			return nil, fmt.Errorf("GitHub недоступен (API: %v; редирект: %v). Задайте зеркало или прокси в разделе «Ядро»", apiErr, err)
+			return nil, fmt.Errorf("GitHub недоступен (API: %v; редирект: %v). Задайте зеркало или прокси в разделе «Компоненты»", apiErr, err)
 		}
 		tag = t
 	}
@@ -457,7 +469,7 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 		})
 	}
 	return "", fmt.Errorf("ни одна из сборок не запустилась на этой системе (архитектура «%s»). %s. "+
-		"Попробуйте «Из пакетов системы» или укажите свой бинарник в разделе «Ядро»", in.Info.Arch, strings.Join(fails, "; "))
+		"Попробуйте «Из пакетов системы» или укажите свой бинарник в разделе «Компоненты»", in.Info.Arch, strings.Join(fails, "; "))
 }
 
 func (in *Installer) installOne(ctx context.Context, c *http.Client, core string, tg target, binDir string) (string, error) {
@@ -474,7 +486,7 @@ func (in *Installer) installOne(ctx context.Context, c *http.Client, core string
 	// после распаковки ядро занимает примерно 2,5 размера архива; жёсткий минимум — 1,5
 	if free := platform.FreeBytes(binDir); free > 0 && tg.Size > 0 && free < uint64(tg.Size)*3/2 {
 		return "", fmt.Errorf("в %s свободно %d МБ — слишком мало (размер загрузки %d МБ, после распаковки ядро занимает около %d МБ). "+
-			"Подключите накопитель и задайте каталог в разделе «Ядро» либо установите ядро из пакетов системы",
+			"Подключите накопитель и задайте каталог в разделе «Компоненты» либо установите ядро из пакетов системы",
 			binDir, free>>20, tg.Size>>20, (tg.Size*5/2)>>20)
 	}
 
@@ -494,7 +506,7 @@ func (in *Installer) installOne(ctx context.Context, c *http.Client, core string
 	if err != nil {
 		_ = os.Remove(newBin)
 		if isNoSpace(err) {
-			return "", fmt.Errorf("в %s не хватило места для ядра. Подключите накопитель и задайте каталог в разделе «Ядро» либо установите ядро из пакетов системы", binDir)
+			return "", fmt.Errorf("в %s не хватило места для ядра. Подключите накопитель и задайте каталог в разделе «Компоненты» либо установите ядро из пакетов системы", binDir)
 		}
 		return "", err
 	}

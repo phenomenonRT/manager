@@ -336,8 +336,14 @@ func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 		}
 		cores[c] = ci
 	}
+	binDir := s.Inst.BinDir(set.Download)
+	installed := map[string]int{}
+	for _, c := range []string{model.CoreSingbox, model.CoreMihomo} {
+		installed[c] = s.Inst.InstalledMB(c, set.Download)
+	}
 	ok(w, map[string]any{"panel_version": s.Version, "platform": s.Info, "cores": cores,
-		"listen": s.St.PanelInfo().Listen})
+		"listen":  s.St.PanelInfo().Listen,
+		"storage": map[string]any{"dir": binDir, "free_mb": platform.FreeMB(binDir), "need_mb": installer.NeedMB, "installed_mb": installed}})
 }
 
 func (s *Server) interfaces(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +477,15 @@ func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	if in.Source != "package" {
+		dl := s.St.Get().Download
+		dir := s.Inst.BinDir(dl)
+		if free := platform.FreeMB(dir); free > 0 && free+s.Inst.InstalledMB(in.Core, dl) < installer.NeedMB[in.Core] {
+			fail(w, 400, fmt.Sprintf("Не хватает места в %s: свободно %d МБ, нужно около %d МБ. Подключите накопитель и укажите каталог установки либо установите из пакетов системы.",
+				dir, free, installer.NeedMB[in.Core]))
+			return
+		}
+	}
 	if in.Source == "package" {
 		err = s.Inst.StartPackage(in.Core)
 	} else {

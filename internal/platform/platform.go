@@ -153,6 +153,9 @@ func writable(dir string) bool {
 	return true
 }
 
+// FreeMB — свободное место (МБ) на разделе, где лежит (или будет лежать) path.
+func FreeMB(path string) int { return int(FreeBytes(nearestExisting(path)) / (1 << 20)) }
+
 func nearestExisting(p string) string {
 	for p != "/" && p != "." && !exists(p) {
 		p = filepath.Dir(p)
@@ -243,7 +246,7 @@ func notes(in Info) []string {
 		n = append(n, "Не найдены ни nft, ни iptables: режимы redirect/tproxy недоступны, используйте TUN.")
 	}
 	if in.BinFreeMB > 0 && in.BinFreeMB < 70 {
-		n = append(n, "В каталоге для бинарников свободно меньше 70 МБ — ядро (30–40 МБ) может не поместиться. Подключите USB-накопитель и задайте каталог в разделе «Ядро» либо нажмите «Из пакетов системы» — пакеты opkg/apk обычно компактнее.")
+		n = append(n, "В каталоге для бинарников свободно меньше 70 МБ — ядро (30–40 МБ) может не поместиться. Подключите USB-накопитель и задайте каталог в разделе «Компоненты» либо нажмите «Из пакетов системы» — пакеты opkg/apk обычно компактнее.")
 	}
 	if in.MemTotalMB > 0 && in.MemTotalMB < 128 {
 		n = append(n, "Мало оперативной памяти (<128 МБ): Mihomo и sing-box будут работать, но избегайте больших наборов правил и режима fakeip с большим числом клиентов.")

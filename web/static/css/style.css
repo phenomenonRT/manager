@@ -150,3 +150,6 @@ main{padding:14px 16px 120px}
 }
 @media(max-width:420px){.top{padding:0 10px;gap:6px}#bar .row .btn{flex:1}.kv{grid-template-columns:1fr}.kv dt{margin-top:4px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:2s!important}}
+
+/* установка недоступна: не хватает места */
+.lowspace,.install.lowspace{opacity:.45;pointer-events:none;filter:grayscale(.6)}

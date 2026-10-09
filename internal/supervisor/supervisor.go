@@ -169,7 +169,7 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	}
 	bin := s.Inst.Locate(set.Core, set.Download)
 	if bin == "" {
-		return fmt.Errorf("ядро %s не установлено — установите его в разделе «Ядро»", installer.BinName(set.Core))
+		return fmt.Errorf("ядро %s не установлено — установите его в разделе «Компоненты»", installer.BinName(set.Core))
 	}
 	res, err := Render(set)
 	if err != nil {

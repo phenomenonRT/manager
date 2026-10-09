@@ -69,6 +69,7 @@ type Status struct {
 	Running    bool   `json:"running"`
 	PkgManager string `json:"pkg_manager,omitempty"`
 	FreeMB     int    `json:"free_mb"`
+	NeedMB     int    `json:"need_mb"`
 	InstallCmd string `json:"install_cmd"`
 	MirrorCmd  string `json:"mirror_cmd"`
 	Job        Job    `json:"job"`
@@ -89,6 +90,14 @@ func pkgManager() string {
 		return "apk"
 	}
 	return ""
+}
+
+// needMB — сколько места нужно для установки: больше, если sing-box ещё не стоит.
+func needMB() int {
+	if _, err := exec.LookPath("sing-box"); err != nil {
+		return minFreeNoSingboxMB
+	}
+	return minFreeMB
 }
 
 func freeMB() int {
@@ -148,7 +157,7 @@ func version(ctx context.Context, pm string) string {
 
 // Status собирает текущее состояние.
 func (m *Manager) Status(ctx context.Context) Status {
-	st := Status{InstallCmd: InstallCmd, MirrorCmd: MirrorCmd, FreeMB: freeMB()}
+	st := Status{InstallCmd: InstallCmd, MirrorCmd: MirrorCmd, FreeMB: freeMB(), NeedMB: needMB()}
 	st.Supported, st.Reason = m.supported()
 	m.mu.Lock()
 	st.Job = Job{Title: m.title, Running: m.running, Finished: m.done, Error: m.err, Output: append([]string{}, m.lines...)}
@@ -228,10 +237,7 @@ func (m *Manager) Install(mirror bool) error {
 	if pkgManager() == "" {
 		return errors.New("в системе нет opkg или apk")
 	}
-	need := minFreeMB
-	if _, err := exec.LookPath("sing-box"); err != nil {
-		need = minFreeNoSingboxMB
-	}
+	need := needMB()
 	if f := freeMB(); f > 0 && f < need {
 		return fmt.Errorf("свободно %d МБ, для установки Podkop нужно не меньше %d МБ (sing-box ставится как зависимость). Освободите место или используйте extroot", f, need)
 	}
