@@ -179,3 +179,28 @@ func TestDiagnoseBinary(t *testing.T) {
 		t.Fatal("пустая диагностика для ELF")
 	}
 }
+
+func TestAmneziaAssets(t *testing.T) {
+	names := []string{"amnezia-box-linux-arm64", "amnezia-box-linux-arm64-plain", "amnezia-box-linux-mipsel", "amnezia-box-linux-mipsel-plain", "amnezia-box-linux-armv7", "checksums.txt"}
+	got, err := PickAssets(model.CoreAmnezia, "arm64", names)
+	if err != nil || len(got) != 2 || got[0] != "amnezia-box-linux-arm64" || got[1] != "amnezia-box-linux-arm64-plain" {
+		t.Fatalf("arm64: %v %v", got, err)
+	}
+	got, err = PickAssets(model.CoreAmnezia, "mipsle", names)
+	if err != nil || got[0] != "amnezia-box-linux-mipsel" {
+		t.Fatalf("mipsle: %v %v", got, err)
+	}
+	if _, err := PickAssets(model.CoreAmnezia, "amd64", names); err == nil {
+		t.Fatal("amd64 не должен находиться")
+	}
+}
+
+func TestWriteRawRejectsHTML(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "x")
+	if err := writeRaw(strings.NewReader("<html>404</html>"), dst); err == nil {
+		t.Fatal("HTML принят за бинарник")
+	}
+	if err := writeRaw(strings.NewReader("\x7fELFrest"), dst); err != nil {
+		t.Fatal(err)
+	}
+}

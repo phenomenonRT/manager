@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"corepanel/internal/features"
 	"corepanel/internal/firewall"
 	"corepanel/internal/importer"
 	"corepanel/internal/installer"
@@ -143,9 +142,6 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "logs/stream", s.logStream, true)
 	api("GET", "podkop", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Podkop.Status(r.Context())) }, true)
 	api("POST", "podkop/{action}", s.podkopAction, true)
-	api("GET", "features", func(w http.ResponseWriter, r *http.Request) {
-		ok(w, map[string]any{"categories": features.Catalog()})
-	}, true)
 
 	// Прокси к Clash API ядра (любой метод, поэтому вне api()).
 	mux.HandleFunc("/api/clash/", func(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +322,7 @@ type coreInfo struct {
 func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 	set := s.St.Get()
 	cores := map[string]coreInfo{}
-	for _, c := range []string{model.CoreSingbox, model.CoreMihomo} {
+	for _, c := range []string{model.CoreSingbox, model.CoreMihomo, model.CoreAmnezia} {
 		ci := coreInfo{}
 		if p := s.Inst.Locate(c, set.Download); p != "" {
 			ci.Installed, ci.Path = true, p
@@ -338,7 +334,7 @@ func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 	}
 	binDir := s.Inst.BinDir(set.Download)
 	installed := map[string]int{}
-	for _, c := range []string{model.CoreSingbox, model.CoreMihomo} {
+	for _, c := range []string{model.CoreSingbox, model.CoreMihomo, model.CoreAmnezia} {
 		installed[c] = s.Inst.InstalledMB(c, set.Download)
 	}
 	ok(w, map[string]any{"panel_version": s.Version, "platform": s.Info, "cores": cores,
@@ -472,8 +468,8 @@ func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.Core != model.CoreSingbox && in.Core != model.CoreMihomo {
-		fail(w, 400, "core: singbox или mihomo")
+	if in.Core != model.CoreSingbox && in.Core != model.CoreMihomo && in.Core != model.CoreAmnezia {
+		fail(w, 400, "core: singbox, mihomo или amnezia")
 		return
 	}
 	var err error

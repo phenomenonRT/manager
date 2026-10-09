@@ -4,23 +4,21 @@ import * as st from '../state.js';
 
 const S = st.S;
 const CORES = {
-  singbox: {
-    name: 'sing-box', tag: 'универсальный и экономичный',
-    pros: ['Современная модель маршрутизации: sniff, rule-set (.srs), правила по протоколу', 'Встроенный WireGuard, возможность создать системный интерфейс', 'TUN с auto_redirect (nftables) — прозрачный прокси без лишних правил', 'Reality, Hysteria2, TUIC, ShadowTLS; обычно меньше расходует память'],
-  },
-  mihomo: {
-    name: 'Mihomo', tag: 'Clash.Meta, богатые группы',
-    pros: ['Группы fallback и load-balance, провайдеры прокси', 'Совместимость с Clash-дашбордами (zashboard, metacubexd)', 'Наборы правил .mrs/yaml, fake-ip, sniffer, TUN', 'Простой YAML-конфиг; много готовых правил MetaCubeX'],
-  },
+  singbox: { name: 'sing-box', tag: 'Универсальное и экономное ядро', chips: ['sniff и rule-set', 'WireGuard', 'TUN auto_redirect', 'Reality, Hysteria2, TUIC'], pkg: true },
+  mihomo: { name: 'Mihomo', tag: 'Clash.Meta с богатыми группами', chips: ['fallback и load-balance', 'Clash-дашборды', 'fake-ip', 'правила .mrs'], pkg: true },
+  amnezia: { name: 'amnezia-box', tag: 'sing-box с AmneziaWG: обход блокировок WireGuard', chips: ['всё из sing-box', 'AmneziaWG', 'сжатая сборка'], pkg: false },
 };
+const ORDER = ['singbox', 'mihomo', 'amnezia'];
 
 export default async function (root) {
   const s = S.settings;
   let alive = true, pollT = 0;
-  const cards = h('div', { class: 'cols' });
-  const jobBox = h('div');
+  const meterBox = h('div');
+  const coreRows = h('div');
   const podkopBox = h('div');
-  apd(root, pageHead('Компоненты', 'Выбор и установка ядра (sing-box или Mihomo), а также Podkop'), cards, h('div', { style: 'height:14px' }), jobBox, podkopBox);
+  const jobBox = h('div');
+  apd(root, pageHead('Компоненты', 'Ядра sing-box, Mihomo и amnezia-box, а также Podkop: установка и выбор активного ядра'),
+    h('div', { class: 'bay' }, meterBox, coreRows, podkopBox), jobBox);
 
   // Хватает ли места под установку: свободное место + размер уже стоящей копии (она заменится).
   function space(id) {
@@ -31,26 +29,47 @@ export default async function (root) {
     return { ok: free <= 0 || have >= need, free, need, dir: sg.dir };
   }
 
+  function drawMeter() {
+    const sg = (S.system && S.system.storage) || {};
+    const need = sg.need_mb || {};
+    const free = sg.free_mb == null ? 0 : sg.free_mb;
+    const marks = ORDER.map((id) => [CORES[id].name, need[id] || 0]).concat([['Podkop', pk.need || 20]]).filter((m) => m[1] > 0);
+    const scale = Math.max(...marks.map((m) => m[1])) * 1.25; // шкала по самому большому компоненту; больше свободного места — заполнено целиком
+    const fill = h('i'); fill.style.width = Math.min(100, free / scale * 100) + '%';
+    const track = h('div', { class: 'meter-track', role: 'img', 'aria-label': 'Свободно ' + free + ' МБ' }, fill);
+    const labels = h('div', { class: 'meter-marks' });
+    for (const [n, v] of marks.slice().sort((x, y) => x[1] - y[1])) {
+      const t = h('b', { class: 'tick ' + (free >= v ? 'fit' : 'nofit'), title: n + ': около ' + v + ' МБ' }); t.style.left = Math.min(98, v / scale * 100) + '%';
+      track.append(t);
+      labels.append(h('span', { class: free >= v ? 'fit' : 'nofit' }, n + ' — ' + v + ' МБ'));
+    }
+    clear(meterBox).append(h('div', { class: 'meter' },
+      h('div', { class: 'meter-head' }, h('b', 'Свободно ' + (sg.free_mb == null ? '—' : free + ' МБ')),
+        h('span', { class: 'mute small' }, 'Ядра ставятся в ', h('code', sg.dir || '—'), ' — каталог меняется ниже')),
+      track, labels));
+  }
+
   function draw() {
     const cores = (S.system && S.system.cores) || {};
-    clear(cards);
-    for (const id of ['singbox', 'mihomo']) {
+    drawMeter();
+    clear(coreRows);
+    for (const id of ORDER) {
       const c = CORES[id], info = cores[id] || {};
       const ver = { v: '' };
       const sel = s.core === id;
       const sp = space(id);
       const lack = !sp.ok;
       const btn = h('button', { class: 'btn primary' + (lack ? ' lowspace' : ''), disabled: lack, title: lack ? 'Не хватает места' : null, onclick: (e) => { e.stopPropagation(); install(id, ver.v); } }, info.installed ? 'Обновить' : 'Установить');
-      const pkgBtn = h('button', { class: 'btn', title: 'Ставит пакет из репозитория OpenWrt/Entware (opkg или apk). Сборки из репозитория обычно компактнее релизов GitHub — подходит, если мало свободной памяти.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы');
+      const pkgBtn = c.pkg ? h('button', { class: 'btn', title: 'Пакет из репозитория OpenWrt/Entware (opkg или apk): обычно компактнее релиза GitHub.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы') : null;
       const pick = h('input', { type: 'radio', name: 'core', checked: sel, 'aria-label': 'Использовать ' + c.name, onchange: () => { s.core = id; st.touch(); draw(); } });
-      cards.append(h('div', { class: 'card corecard' + (sel ? ' sel' : ''), onclick: (e) => { if (e.target.closest('button,input,label')) return; pick.click(); } },
-        h('div', { class: 'row' }, h('label', { class: 'row', style: 'cursor:pointer' }, pick, h('b', { style: 'font-size:16px' }, c.name)),
-          sel ? badge('выбрано', 'acc') : null, h('span', { class: 'grow' }), info.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn')),
-        h('p', { class: 'mute' }, c.tag),
-        h('ul', c.pros.map((p) => h('li', p))),
-        h('dl', { class: 'kv', style: 'margin:8px 0' }, h('dt', 'Версия'), h('dd', info.version || '—'), h('dt', 'Путь'), h('dd', { class: 'mono' }, info.path || '—')),
-        lack ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Подключите накопитель и укажите каталог установки ниже (затем сохраните настройки) либо поставьте ядро «Из пакетов системы» — эти сборки компактнее.') : null,
-        h('div', { class: 'row' }, h('input', { type: 'text', class: lack ? 'lowspace' : '', disabled: lack, style: 'flex:1;min-width:120px', placeholder: 'версия (пусто — последняя)', 'aria-label': 'Версия ' + c.name, spellcheck: 'false', oninput: (e) => { ver.v = e.target.value.trim(); } }), btn, pkgBtn)));
+      coreRows.append(h('div', { class: 'mod' + (sel ? ' on' : ''), onclick: (e) => { if (e.target.closest('button,input,label,details')) return; pick.click(); } },
+        h('div', { class: 'mod-head' }, h('label', { class: 'mod-name' }, pick, h('b', c.name)),
+          h('span', { class: 'mod-tag' }, c.tag), h('span', { class: 'grow' }),
+          sel ? badge('активно', 'acc') : null, info.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn')),
+        h('div', { class: 'chips' }, c.chips.map((x) => h('span', x))),
+        h('div', { class: 'mod-meta mono small' }, info.installed ? [h('span', 'v' + (info.version || '?').replace(/^v/, '')), h('span', info.path)] : [h('span', 'нужно около ' + (sp.need || '?') + ' МБ')]),
+        lack ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Скачанный файл при нехватке места удаляется. Подключите накопитель и укажите каталог установки ниже' + (c.pkg ? ' либо поставьте ядро «Из пакетов системы».' : '.')) : null,
+        h('div', { class: 'mod-act' }, h('input', { type: 'text', class: lack ? 'lowspace' : '', disabled: lack, placeholder: 'версия (пусто — последняя)', 'aria-label': 'Версия ' + c.name, spellcheck: 'false', oninput: (e) => { ver.v = e.target.value.trim(); } }), btn, pkgBtn)));
     }
   }
 
@@ -78,7 +97,7 @@ export default async function (root) {
     clear(jobBox);
     if (!j || (!j.running && !j.finished && !j.stage)) return;
     const bar = h('i'); bar.style.width = Math.min(100, j.percent || 0) + '%';
-    jobBox.append(h('div', { class: 'card' }, h('h2', 'Установка ' + (j.core === 'mihomo' ? 'Mihomo' : j.core === 'singbox' ? 'sing-box' : '')),
+    jobBox.append(h('div', { class: 'card' }, h('h2', 'Установка ' + st.coreName(j.core)),
       j.error ? note('err', j.error) : null,
       h('div', { class: 'row small', style: 'margin-bottom:6px' }, j.running ? h('span', { class: 'spin' }) : null, h('span', j.message || j.stage || ''), h('span', { class: 'grow' }), h('span', (j.percent || 0) + '%')),
       h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(j.percent || 0) }, bar)));
@@ -86,6 +105,7 @@ export default async function (root) {
 
   // ---------- Podkop ----------
   let pkT = 0;
+  const pk = { need: 20 };
   async function pkAct(name, confirmText) {
     if (confirmText && !(await confirmBox(confirmText, 'Продолжить', name === 'remove'))) return;
     try { await post('api/podkop/' + name); toast('Готово', 'ok'); } catch (e) { toastErr(e); }
@@ -97,11 +117,12 @@ export default async function (root) {
   async function pkLoad() {
     clearTimeout(pkT);
     let p;
-    try { p = await get('api/podkop'); } catch (e) { if (alive) clear(podkopBox).append(h('div', { class: 'card' }, h('h2', 'Podkop'), note('err', e.message))); return; }
+    try { p = await get('api/podkop'); } catch (e) { if (alive) clear(podkopBox).append(h('div', { class: 'mod' }, h('b', 'Podkop'), note('err', e.message))); return; }
     if (!alive) return;
+    pk.need = p.need_mb || 20; if (alive) drawMeter();
     const busy = p.job && p.job.running;
     const lack = p.supported && !p.installed && p.free_mb > 0 && p.free_mb < p.need_mb;
-    const kids = [h('h2', 'Podkop')];
+    const kids = [h('div', { class: 'mod-head' }, h('b', { class: 'mod-name' }, 'Podkop'), h('span', { class: 'mod-tag' }, 'Готовая маршрутизация на sing-box для OpenWrt'), h('span', { class: 'grow' }), p.installed ? (p.running ? badge('работает', 'ok') : badge('остановлен')) : badge('не установлен', 'warn'))];
     if (!p.supported) kids.push(h('p', { class: 'small mute' }, p.reason));
     else {
       kids.push(h('p', { class: 'small mute' }, 'Маршрутизация на базе sing-box для OpenWrt. Это альтернатива ядру панели: вместе они не запускаются (панель это блокирует). Настройки самого Podkop — в LuCI: Службы → Podkop.'));
@@ -131,7 +152,7 @@ export default async function (root) {
         setTimeout(() => { pre.scrollTop = pre.scrollHeight; }, 0);
       }
     }
-    clear(podkopBox).append(h('div', { class: 'card' }, kids));
+    clear(podkopBox).append(h('div', { class: 'mod pk' }, kids));
     if (busy && alive) pkT = setTimeout(pkLoad, 1500);
   }
 
@@ -150,7 +171,8 @@ export default async function (root) {
         field('HTTP-прокси для загрузок', txt(d, 'proxy', { ph: 'http://127.0.0.1:7890' }), 'Например, mixed-порт уже работающего ядра или другого прокси. Формат: http(s)://host:port.'),
         field('Каталог установки ядер', txt(d, 'bin_dir', { ph: (S.system && S.system.platform && S.system.platform.bin_dir) || '/opt/bin' }), 'Куда класть бинарники. Пусто — каталог по умолчанию для платформы. На роутерах с малой флеш-памятью выбирайте внешний накопитель.'),
         field('Свой бинарник sing-box', txt(d, 'singbox_path', { ph: '/opt/bin/sing-box' }), 'Если указан, используется он, а не скачанный панелью. Полезно для сборок с нужными тегами.'),
-        field('Свой бинарник Mihomo', txt(d, 'mihomo_path', { ph: '/opt/bin/mihomo' }))),
+        field('Свой бинарник Mihomo', txt(d, 'mihomo_path', { ph: '/opt/bin/mihomo' })),
+        field('Свой бинарник amnezia-box', txt(d, 'amnezia_path', { ph: '/opt/bin/amnezia-box' }))),
       h('div', { class: 'row' }, h('p', { class: 'small mute grow' }, 'Изменения вступают в силу после сохранения настроек. Свободное место считается по сохранённому каталогу.'),
         h('button', { class: 'btn', onclick: async () => { try { await st.loadSystem(); draw(); pkLoad(); toast('Место пересчитано', 'ok'); } catch (e) { toastErr(e); } } }, 'Пересчитать место'))));
   return () => { alive = false; clearTimeout(pollT); clearTimeout(pkT); };

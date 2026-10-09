@@ -12,12 +12,16 @@ import (
 const (
 	CoreSingbox = "singbox"
 	CoreMihomo  = "mihomo"
+	CoreAmnezia = "amnezia" // amnezia-box: форк sing-box с AmneziaWG
 )
+
+// IsSingbox — ядро понимает конфиг sing-box (sing-box и его форк amnezia-box).
+func IsSingbox(core string) bool { return core == CoreSingbox || core == CoreAmnezia }
 
 // Settings — все пользовательские настройки панели.
 type Settings struct {
 	Version   int    `json:"version"`
-	Core      string `json:"core"`      // singbox | mihomo
+	Core      string `json:"core"`      // singbox | mihomo | amnezia
 	Autostart bool   `json:"autostart"` // запускать ядро вместе с панелью
 
 	General  General   `json:"general"`
@@ -135,9 +139,31 @@ type Node struct {
 	MTU           int      `json:"mtu,omitempty"`
 	System        bool     `json:"system,omitempty"` // sing-box: создать системный интерфейс wg
 
+	AWG *AWG `json:"awg,omitempty"` // параметры AmneziaWG (тип узла awg, только ядро amnezia-box)
+
 	Detour        string `json:"detour,omitempty"`         // цепочка через другой узел
 	BindInterface string `json:"bind_interface,omitempty"` // выход через конкретный WAN
 	Disabled      bool   `json:"disabled,omitempty"`
+}
+
+// AWG — параметры обфускации AmneziaWG. Нулевые значения не передаются ядру.
+type AWG struct {
+	Jc   int    `json:"jc,omitempty"`
+	Jmin int    `json:"jmin,omitempty"`
+	Jmax int    `json:"jmax,omitempty"`
+	S1   int    `json:"s1,omitempty"`
+	S2   int    `json:"s2,omitempty"`
+	S3   int    `json:"s3,omitempty"`
+	S4   int    `json:"s4,omitempty"`
+	H1   string `json:"h1,omitempty"` // число или диапазон «a-b»
+	H2   string `json:"h2,omitempty"`
+	H3   string `json:"h3,omitempty"`
+	H4   string `json:"h4,omitempty"`
+	I1   string `json:"i1,omitempty"`
+	I2   string `json:"i2,omitempty"`
+	I3   string `json:"i3,omitempty"`
+	I4   string `json:"i4,omitempty"`
+	I5   string `json:"i5,omitempty"`
 }
 
 // Group — группа узлов.
@@ -185,6 +211,7 @@ type Download struct {
 	Proxy       string `json:"proxy"`        // http(s)://host:port для загрузок
 	SingboxPath string `json:"singbox_path"` // свой бинарник
 	MihomoPath  string `json:"mihomo_path"`
+	AmneziaPath string `json:"amnezia_path"`
 	BinDir      string `json:"bin_dir"` // куда устанавливать ядра
 }
 
@@ -213,7 +240,7 @@ func Default() *Settings {
 // Normalize подставляет значения по умолчанию в пустые поля (после загрузки JSON).
 func (s *Settings) Normalize() {
 	d := Default()
-	if s.Core != CoreSingbox && s.Core != CoreMihomo {
+	if s.Core != CoreSingbox && s.Core != CoreMihomo && s.Core != CoreAmnezia {
 		s.Core = d.Core
 	}
 	if s.General.LogLevel == "" {
@@ -323,7 +350,7 @@ var reserved = map[string]bool{"direct": true, "block": true, "DIRECT": true, "R
 var badNameChars = regexp.MustCompile(`[,\n\r"]`)
 
 // SupportedNodeTypes — типы узлов, которые умеет собирать панель.
-var SupportedNodeTypes = []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "wireguard", "socks", "http"}
+var SupportedNodeTypes = []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "wireguard", "awg", "socks", "http"}
 
 // Validate проверяет настройки и возвращает список замечаний.
 func (s *Settings) Validate() []Issue {
@@ -380,6 +407,13 @@ func (s *Settings) Validate() []Issue {
 		case "tuic":
 			if n.UUID == "" {
 				add("error", "узел «%s»: нужен UUID", n.Name)
+			}
+		case "awg":
+			if s.Core != CoreAmnezia {
+				add("error", "узел «%s»: AmneziaWG работает только на ядре amnezia-box", n.Name)
+			}
+			if n.PrivateKey == "" || n.PeerPublicKey == "" || len(n.Addresses) == 0 {
+				add("error", "узел «%s»: для AmneziaWG нужны приватный ключ, публичный ключ пира и адрес интерфейса", n.Name)
 			}
 		case "wireguard":
 			if n.PrivateKey == "" || n.PeerPublicKey == "" || len(n.Addresses) == 0 {

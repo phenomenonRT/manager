@@ -355,6 +355,9 @@ func mhProxies(s *model.Settings, p *plan) ([]any, []any) {
 			if n.System {
 				p.warn("узел «%s»: системный интерфейс WireGuard есть только в sing-box — в Mihomo используется встроенный туннель", n.Name)
 			}
+		case "awg":
+			p.warn("узел «%s»: AmneziaWG работает только на ядре amnezia-box — узел пропущен", n.Name)
+			fail = true
 		default:
 			p.warn("узел «%s»: тип «%s» не поддерживается генератором", n.Name, n.Type)
 			fail = true

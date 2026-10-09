@@ -234,3 +234,38 @@ func containsWarn(ws []string, sub string) bool {
 	}
 	return false
 }
+
+func TestAmneziaAWG(t *testing.T) {
+	s := sample()
+	s.Core = model.CoreAmnezia
+	s.Nodes = append(s.Nodes, model.Node{Name: "awg1", Type: "awg", Server: "1.2.3.4", Port: 51820, PrivateKey: "P", PeerPublicKey: "Q",
+		Addresses: []string{"10.8.0.2/32"}, AWG: &model.AWG{Jc: 4, Jmin: 40, Jmax: 70, S1: 10, H1: "1234-5678"}})
+	if hasError(s.Validate()) {
+		t.Fatalf("validate: %v", s.Validate())
+	}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{`"type": "awg"`, `"jc": 4`, `"jmin": 40`, `"h1": "1234-5678"`} {
+		if !strings.Contains(res.Config, w) {
+			t.Errorf("нет %s", w)
+		}
+	}
+	if strings.Contains(res.Config, `"s2"`) {
+		t.Error("нулевой s2 не должен выводиться")
+	}
+	s.Core = model.CoreSingbox
+	if !hasError(s.Validate()) {
+		t.Error("awg на sing-box должен давать ошибку")
+	}
+}
+
+func hasError(is []model.Issue) bool {
+	for _, i := range is {
+		if i.Level == "error" {
+			return true
+		}
+	}
+	return false
+}

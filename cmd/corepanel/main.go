@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"corepanel/internal/features"
 	"corepanel/internal/installer"
 	"corepanel/internal/platform"
 	"corepanel/internal/server"
@@ -27,7 +26,6 @@ const usage = `corepanel %s — панель sing-box / Mihomo для OpenWrt и
 Использование:
   corepanel [run] [-listen host:port]   запустить панель (по умолчанию)
   corepanel passwd [пароль]             сбросить пароль администратора
-  corepanel features-md                 вывести справочник возможностей в Markdown
   corepanel version
 
 Переменные окружения: COREPANEL_DIR, COREPANEL_BIN_DIR, COREPANEL_PLATFORM (openwrt|keenetic|linux)
@@ -57,8 +55,6 @@ func main() {
 			fatal(err)
 		}
 		fmt.Println("Пароль администратора (admin) изменён.")
-	case "features-md":
-		fmt.Print(features.Markdown())
 	case "version", "-v", "--version":
 		fmt.Println(version)
 	default:

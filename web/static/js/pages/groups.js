@@ -18,7 +18,7 @@ export default async function (root) {
   function taken(except) { return new Set([...s.nodes.map((n) => n.name), ...s.groups.map((g) => g.name), 'direct', 'block'].filter((x) => x !== except)); }
 
   function draw() {
-    clear(top).append(s.core === 'singbox' && s.groups.some((g) => g.type === 'fallback' || g.type === 'loadbalance')
+    clear(top).append(st.isSb(s.core) && s.groups.some((g) => g.type === 'fallback' || g.type === 'loadbalance')
       ? note('warn', 'В sing-box нет групп fallback и loadbalance — они будут заменены на urltest (генератор покажет это в предупреждениях). Для полной поддержки выберите Mihomo.') : '');
     clear(list);
     if (!s.groups.length) list.append(h('div', { class: 'empty' }, 'Групп пока нет. Нажмите «Быстрый старт» или добавьте группу вручную.'));

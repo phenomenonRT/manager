@@ -153,3 +153,30 @@ main{padding:14px 16px 120px}
 
 /* установка недоступна: не хватает места */
 .lowspace,.install.lowspace{opacity:.45;pointer-events:none;filter:grayscale(.6)}
+
+/* ---- Компоненты ---- */
+.bay{margin-bottom:14px;border:1px solid var(--line,#d8dedc);border-radius:10px;background:var(--card,#fff);overflow:hidden}
+.bay .meter{padding:16px 18px 16px;border-bottom:1px solid var(--line,#d8dedc)}
+.meter-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:10px}
+.meter-track{position:relative;height:10px;border-radius:5px;background:color-mix(in srgb,var(--fg,#222) 10%,transparent)}
+.meter-track>i{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--accent,#0a7c74)}
+.meter-track .tick{position:absolute;top:-4px;width:2px;height:18px;margin-left:-1px;background:var(--fg,#222);opacity:.55}
+.meter-track .tick.nofit{background:var(--err,#b3261e);opacity:.9}
+.meter-marks{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:12px;font-size:12px}
+.meter-marks span{color:var(--mute,#667)}
+.meter-marks span.fit::before{content:"✓ ";color:var(--accent,#0a7c74)}
+.meter-marks span.nofit{color:var(--err,#b3261e)}
+.meter-marks span.nofit::before{content:"✕ "}
+.mod{position:relative;padding:14px 18px 14px 22px;border-top:1px solid var(--line,#d8dedc);cursor:default}
+.bay .meter+div>.mod:first-child,.bay>div:first-child+div .mod:first-child{border-top:0}
+.mod::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:transparent}
+.mod.on::before{background:var(--accent,#0a7c74)}
+.mod.on{background:color-mix(in srgb,var(--accent,#0a7c74) 5%,transparent)}
+.mod-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.mod-name{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:16px}
+.mod-tag{color:var(--mute,#667);font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chips span{font-size:12px;padding:2px 9px;border-radius:99px;border:1px solid var(--line,#d8dedc)}
+.mod-meta{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--mute,#667);word-break:break-all}
+.mod-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.mod-act input[type=text]{flex:1;min-width:140px}

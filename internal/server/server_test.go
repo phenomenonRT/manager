@@ -92,9 +92,6 @@ func TestAuthAndSettings(t *testing.T) {
 			t.Fatalf("keygen %s: %d", kind, r.StatusCode)
 		}
 	}
-	if _, out := do(t, c, "GET", ts.URL+"/api/features", ""); !strings.Contains(out, "vless") {
-		t.Fatal("нет каталога возможностей")
-	}
 	if r, _ := do(t, c, "GET", ts.URL+"/api/clash/proxies", ""); r.StatusCode != 502 {
 		t.Fatalf("clash без ядра: %d", r.StatusCode)
 	}

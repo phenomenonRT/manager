@@ -6,7 +6,7 @@ const S = st.S;
 const ROUTES = [
   ['dashboard', 'Обзор'], ['nodes', 'Узлы и VPN'], ['groups', 'Группы'],
   ['routing', 'Маршрутизация'], ['dns', 'DNS'], ['network', 'Входящие, TUN, сеть'],
-  ['config', 'Конфигурация'], ['logs', 'Логи'], ['features', 'Справочник функций'], ['components', 'Компоненты'], ['system', 'Система'],
+  ['config', 'Конфигурация'], ['logs', 'Логи'], ['components', 'Компоненты'], ['system', 'Система'],
 ];
 const app = document.getElementById('app');
 let main = null, barEl = null, statusTimer = 0, cleanup = null, token = 0, started = false, unsub = null;
@@ -83,7 +83,7 @@ function startApp() {
     h('div', { class: 'shell' }, nav, main), h('div', { class: 'scrim', onclick: () => document.body.classList.remove('nav') }), barEl);
 
   const paint = () => {
-    coreB.textContent = S.settings.core === 'mihomo' ? 'Mihomo' : 'sing-box';
+    coreB.textContent = st.coreName(S.settings.core);
     const stt = S.status ? S.status.state : '—';
     const kind = stt === 'running' ? 'ok' : (stt === 'error' || stt === 'failed') ? 'err' : 'warn';
     clear(svc).append(h('span', { class: 'dot ' + kind }), stt === 'running' ? 'работает' : stt === 'stopped' ? 'остановлен' : stt);

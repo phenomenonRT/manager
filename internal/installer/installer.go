@@ -3,6 +3,7 @@ package installer
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"debug/elf"
@@ -30,11 +31,12 @@ import (
 var Repo = map[string]string{
 	model.CoreSingbox: "SagerNet/sing-box",
 	model.CoreMihomo:  "MetaCubeX/mihomo",
+	model.CoreAmnezia: "phenomenonRT/amnezia-box",
 }
 
 // NeedMB — сколько места занимает распакованное ядро (оценка, МБ). Панель блокирует
 // установку с GitHub, если свободного места меньше.
-var NeedMB = map[string]int{model.CoreSingbox: 50, model.CoreMihomo: 35}
+var NeedMB = map[string]int{model.CoreSingbox: 50, model.CoreMihomo: 35, model.CoreAmnezia: 15}
 
 // InstalledMB — размер уже скачанной панелью копии ядра в каталоге установки (МБ): при обновлении это место освободится.
 func (in *Installer) InstalledMB(core string, d model.Download) int {
@@ -46,8 +48,11 @@ func (in *Installer) InstalledMB(core string, d model.Download) int {
 
 // BinName — имя исполняемого файла.
 func BinName(core string) string {
-	if core == model.CoreMihomo {
+	switch core {
+	case model.CoreMihomo:
 		return "mihomo"
+	case model.CoreAmnezia:
+		return "amnezia-box"
 	}
 	return "sing-box"
 }
@@ -64,6 +69,15 @@ var variants = map[string]map[string][]string{
 		"mipsle":   {"mipsle", "mipsle-softfloat", "mipsle-musl"},
 		"mips":     {"mips", "mips-softfloat"},
 		"riscv64":  {"riscv64", "riscv64-musl"},
+	},
+	// amnezia-box: готовые бинарники без архива; основная сборка сжата UPX (мала), «-plain» — запасная без сжатия
+	model.CoreAmnezia: {
+		"arm64":  {"arm64", "arm64-plain"},
+		"armv7":  {"armv7", "armv7-plain"},
+		"armv6":  {"armv5", "armv5-plain"},
+		"armv5":  {"armv5", "armv5-plain"},
+		"mipsle": {"mipsel", "mipsel-plain"},
+		"mips":   {"mips", "mips-plain"},
 	},
 	model.CoreMihomo: {
 		"amd64":    {"amd64", "amd64-compatible", "amd64-v1"},
@@ -82,12 +96,15 @@ var variants = map[string]map[string][]string{
 
 var (
 	reSingbox = regexp.MustCompile(`^sing-box-[0-9][^/]*?-linux-(.+)\.tar\.gz$`)
+	reAmnezia = regexp.MustCompile(`^amnezia-box-linux-([a-z0-9]+(?:-plain)?)$`)
 	reMihomo  = regexp.MustCompile(`^mihomo-linux-(.+?)-(?:v[0-9]+\.[0-9]+\.[0-9]+|alpha-[0-9a-f]+).*\.gz$`)
 )
 
 func assetVariant(core, name string) (string, bool) {
 	var m []string
-	if core == model.CoreSingbox {
+	if core == model.CoreAmnezia {
+		m = reAmnezia.FindStringSubmatch(name)
+	} else if core == model.CoreSingbox {
 		m = reSingbox.FindStringSubmatch(name)
 	} else {
 		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".zip") {
@@ -193,8 +210,11 @@ func (in *Installer) BinDir(d model.Download) string {
 // Locate ищет бинарник ядра: свой путь → каталог установки → PATH.
 func (in *Installer) Locate(core string, d model.Download) string {
 	custom := d.SingboxPath
-	if core == model.CoreMihomo {
+	switch core {
+	case model.CoreMihomo:
 		custom = d.MihomoPath
+	case model.CoreAmnezia:
+		custom = d.AmneziaPath
 	}
 	if custom != "" && isExec(custom) {
 		return custom
@@ -359,14 +379,16 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 		}
 		tag = t
 	}
-	if !strings.HasPrefix(tag, "v") {
+	if core != model.CoreAmnezia && !strings.HasPrefix(tag, "v") {
 		tag = "v" + tag
 	}
 	ver := strings.TrimPrefix(tag, "v")
 	var out []target
 	for _, v := range variants[core][in.Info.Arch] {
 		var name string
-		if core == model.CoreSingbox {
+		if core == model.CoreAmnezia {
+			name = "amnezia-box-linux-" + v
+		} else if core == model.CoreSingbox {
 			name = fmt.Sprintf("sing-box-%s-linux-%s.tar.gz", ver, v)
 		} else {
 			name = fmt.Sprintf("mihomo-linux-%s-%s.gz", v, tag)
@@ -399,11 +421,14 @@ func (in *Installer) Start(core, version string, d model.Download) error {
 // StartPackage устанавливает ядро из репозитория пакетов системы (opkg/apk).
 // Пакеты OpenWrt и Entware собраны компактнее релизов GitHub — это выход, когда мало флеш-памяти.
 func (in *Installer) StartPackage(core string) error {
+	if core == model.CoreAmnezia {
+		return errors.New("amnezia-box нет в репозиториях пакетов — установите его с GitHub (сборка сжата и занимает около 15 МБ)")
+	}
 	return in.run(core, func(ctx context.Context) (string, error) { return in.installPackage(ctx, core) })
 }
 
 func (in *Installer) run(core string, f func(ctx context.Context) (string, error)) error {
-	if core != model.CoreSingbox && core != model.CoreMihomo {
+	if core != model.CoreSingbox && core != model.CoreMihomo && core != model.CoreAmnezia {
 		return fmt.Errorf("неизвестное ядро «%s»", core)
 	}
 	in.mu.Lock()
@@ -484,7 +509,11 @@ func (in *Installer) installOne(ctx context.Context, c *http.Client, core string
 		}
 	}
 	// после распаковки ядро занимает примерно 2,5 размера архива; жёсткий минимум — 1,5
-	if free := platform.FreeBytes(binDir); free > 0 && tg.Size > 0 && free < uint64(tg.Size)*3/2 {
+	need := uint64(tg.Size) * 3 / 2
+	if core == model.CoreAmnezia {
+		need = uint64(tg.Size) * 11 / 10 // бинарник качается как есть, без распаковки
+	}
+	if free := platform.FreeBytes(binDir); free > 0 && tg.Size > 0 && free < need {
 		return "", fmt.Errorf("в %s свободно %d МБ — слишком мало (размер загрузки %d МБ, после распаковки ядро занимает около %d МБ). "+
 			"Подключите накопитель и задайте каталог в разделе «Компоненты» либо установите ядро из пакетов системы",
 			binDir, free>>20, tg.Size>>20, (tg.Size*5/2)>>20)
@@ -590,7 +619,11 @@ func (in *Installer) fetchExtract(ctx context.Context, c *http.Client, tg target
 	if total <= 0 {
 		total = tg.Size
 	}
-	gz, err := gzip.NewReader(io.TeeReader(resp.Body, &progressWriter{in: in, total: total}))
+	body := io.TeeReader(resp.Body, &progressWriter{in: in, total: total})
+	if core == model.CoreAmnezia {
+		return writeRaw(body, dst)
+	}
+	gz, err := gzip.NewReader(body)
 	if err != nil {
 		return fmt.Errorf("архив повреждён: %v", err)
 	}
@@ -618,6 +651,27 @@ func (in *Installer) fetchExtract(ctx context.Context, c *http.Client, tg target
 		return err
 	}
 	if _, err := io.Copy(out, src); err != nil {
+		out.Close()
+		if isNoSpace(err) {
+			return err
+		}
+		return fmt.Errorf("обрыв загрузки: %v", err)
+	}
+	return out.Close()
+}
+
+// writeRaw сохраняет бинарник, скачанный без архива (amnezia-box), проверив ELF-заголовок:
+// страница ошибки или зеркало с HTML не должны превратиться в «ядро».
+func writeRaw(src io.Reader, dst string) error {
+	br := bufio.NewReader(src)
+	if magic, err := br.Peek(4); err != nil || string(magic) != "\x7fELF" {
+		return errors.New("скачан не исполняемый файл (ожидался ELF): проверьте зеркало и прокси")
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, br); err != nil {
 		out.Close()
 		if isNoSpace(err) {
 			return err

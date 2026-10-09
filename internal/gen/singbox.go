@@ -255,6 +255,10 @@ func sbOutbounds(s *model.Settings, p *plan) ([]any, []any) {
 			eps = append(eps, sbWireGuard(s, n))
 			continue
 		}
+		if n.Type == "awg" {
+			eps = append(eps, sbAWG(s, n))
+			continue
+		}
 		if o := sbNode(s, p, n); o != nil {
 			outs = append(outs, o)
 		}
@@ -435,6 +439,32 @@ func sbWireGuard(s *model.Settings, n model.Node) *O {
 	if n.System {
 		o.Set("name", wgIfaceName(n.Name))
 	}
+	sbDial(o, s, n)
+	return o
+}
+
+// sbAWG — endpoint AmneziaWG для amnezia-box (форк sing-box). Нулевые параметры
+// обфускации не передаются, поэтому без них туннель совместим с обычным WireGuard.
+func sbAWG(s *model.Settings, n model.Node) *O {
+	allowed := n.AllowedIPs
+	if len(allowed) == 0 {
+		allowed = []string{"0.0.0.0/0", "::/0"}
+	}
+	peer := NewO().Set("address", n.Server).Set("port", n.Port).Set("public_key", n.PeerPublicKey).
+		Opt("pre_shared_key", n.PreSharedKey).Set("allowed_ips", allowed)
+	o := NewO().Set("type", "awg").Set("tag", n.Name).
+		Set("system", n.System).Opt("mtu", n.MTU).
+		Set("address", n.Addresses).Set("private_key", n.PrivateKey)
+	if n.System {
+		o.Set("name", wgIfaceName(n.Name))
+	}
+	if a := n.AWG; a != nil {
+		o.Opt("jc", a.Jc).Opt("jmin", a.Jmin).Opt("jmax", a.Jmax).
+			Opt("s1", a.S1).Opt("s2", a.S2).Opt("s3", a.S3).Opt("s4", a.S4).
+			Opt("h1", a.H1).Opt("h2", a.H2).Opt("h3", a.H3).Opt("h4", a.H4).
+			Opt("i1", a.I1).Opt("i2", a.I2).Opt("i3", a.I3).Opt("i4", a.I4).Opt("i5", a.I5)
+	}
+	o.Set("peers", []any{peer})
 	sbDial(o, s, n)
 	return o
 }

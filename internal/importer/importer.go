@@ -485,6 +485,7 @@ func ParseWireGuardConf(text string) (model.Node, error) {
 	section := ""
 	peers := 0
 	var amnezia bool
+	var awg model.AWG
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if i := strings.IndexAny(line, "#;"); i == 0 {
@@ -514,8 +515,9 @@ func ParseWireGuardConf(text string) (model.Node, error) {
 				n.Addresses = append(n.Addresses, splitList(v)...)
 			case "mtu":
 				n.MTU, _ = strconv.Atoi(v)
-			case "jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4":
+			case "jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5":
 				amnezia = true
+				setAWG(&awg, k, v)
 			}
 		case "peer":
 			if peers > 1 {
@@ -542,10 +544,51 @@ func ParseWireGuardConf(text string) (model.Node, error) {
 		return n, fmt.Errorf("в конфиге WireGuard не хватает PrivateKey, Address, PublicKey или Endpoint")
 	}
 	if amnezia {
-		return n, fmt.Errorf("обнаружены параметры AmneziaWG (Jc/Jmin/S1/H1…): панель их не применяет, поэтому туннель не заработал бы. Импортируйте обычный WireGuard-конфиг или задайте узел вручную через «Дополнительно»")
+		n.Type = "awg"
+		n.AWG = &awg
+		n.Name = fmt.Sprintf("awg-%s", n.Server)
+		return n, nil
 	}
 	n.Name = fmt.Sprintf("wg-%s", n.Server)
 	return n, nil
+}
+
+func setAWG(a *model.AWG, k, v string) {
+	num, _ := strconv.Atoi(v)
+	switch k {
+	case "jc":
+		a.Jc = num
+	case "jmin":
+		a.Jmin = num
+	case "jmax":
+		a.Jmax = num
+	case "s1":
+		a.S1 = num
+	case "s2":
+		a.S2 = num
+	case "s3":
+		a.S3 = num
+	case "s4":
+		a.S4 = num
+	case "h1":
+		a.H1 = v
+	case "h2":
+		a.H2 = v
+	case "h3":
+		a.H3 = v
+	case "h4":
+		a.H4 = v
+	case "i1":
+		a.I1 = v
+	case "i2":
+		a.I2 = v
+	case "i3":
+		a.I3 = v
+	case "i4":
+		a.I4 = v
+	case "i5":
+		a.I5 = v
+	}
 }
 
 // UniqueName подбирает свободное имя, добавляя числовой суффикс.

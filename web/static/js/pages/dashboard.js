@@ -32,7 +32,7 @@ export default async function (root) {
     const kind = s.state === 'running' ? 'ok' : s.state === 'error' || s.state === 'failed' ? 'err' : 'warn';
     clear(svcBox).append(h('h2', 'Сервис'),
       h('div', { class: 'row', style: 'margin-bottom:10px' }, badge(STATE_RU[s.state] || s.state, kind),
-        s.core ? badge(s.core === 'mihomo' ? 'Mihomo' : 'sing-box', 'acc') : null),
+        s.core ? badge(st.coreName(s.core), 'acc') : null),
       h('dl', { class: 'kv', style: 'margin-bottom:10px' },
         h('dt', 'PID'), h('dd', s.pid ? String(s.pid) : '—'),
         h('dt', 'Аптайм'), h('dd', run && s.uptime_sec ? fmtDur(s.uptime_sec) : '—'),

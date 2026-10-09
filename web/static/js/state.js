@@ -36,6 +36,10 @@ export async function loadSettings() {
 }
 export async function loadSystem() { S.system = await get('api/system'); emit(); return S.system; }
 export async function loadStatus() { S.status = await get('api/status'); emit(); return S.status; }
+export const CORE_NAME = { singbox: 'sing-box', mihomo: 'Mihomo', amnezia: 'amnezia-box' };
+export const coreName = (c) => CORE_NAME[c] || c || '';
+// sing-box и его форк amnezia-box читают один и тот же формат конфига.
+export const isSb = (c) => c === 'singbox' || c === 'amnezia';
 export const isRunning = () => !!S.status && (S.status.state === 'running' || S.status.state === 'starting');
 
 export async function validate() {
