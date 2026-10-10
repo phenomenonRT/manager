@@ -16,9 +16,11 @@ export default async function (root) {
   const meterBox = h('div');
   const coreRows = h('div');
   const podkopBox = h('div');
+  const depBox = h('div');
+  let depT = 0;
   const jobBox = h('div');
   apd(root, pageHead('Компоненты', 'Ядра sing-box, Mihomo и amnezia-box, а также Podkop: установка, удаление и выбор активного ядра'),
-    h('div', { class: 'bay' }, meterBox, coreRows, podkopBox), jobBox);
+    h('div', { class: 'bay' }, meterBox, coreRows, podkopBox, depBox), jobBox);
 
   // Хватает ли места под установку: свободное место + размер уже стоящей копии (она заменится).
   function space(id) {
@@ -158,8 +160,34 @@ export default async function (root) {
     if (busy && alive) pkT = setTimeout(pkLoad, 1500);
   }
 
+  async function depLoad() {
+    clearTimeout(depT);
+    let k;
+    try { k = await get('api/kmods'); } catch (e) { return; }
+    if (!alive) return;
+    clear(depBox);
+    if (!k.installable) return;
+    const j = k.job || {};
+    const have = k.present || [];
+    const why = { 'kmod-tun': 'устройство TUN', 'kmod-nft-tproxy': 'режим tproxy', 'kmod-nft-queue': 'auto_redirect в TUN' };
+    depBox.append(h('div', { class: 'mod' },
+      h('div', { class: 'mod-head' }, h('b', { class: 'mod-name' }, 'Зависимые компоненты'), h('span', { class: 'mod-tag' }, 'Модули ядра для TUN и tproxy'), h('span', { class: 'grow' }),
+        have.length ? badge('установлено: ' + have.length, 'ok') : badge('нет', 'warn')),
+      h('div', { class: 'chips' }, have.length ? have.map((p) => h('span', p + ' — ' + (why[p] || ''))) : [h('span', 'ничего не установлено')]),
+      h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin-top:10px' },
+        h('button', { class: 'btn danger', disabled: !have.length || !!j.running, onclick: async () => {
+          if (!(await confirmBox('Удалить ' + have.join(', ') + '? Режимы TUN и tproxy перестанут работать, пока пакеты не будут установлены снова (страница «Входящие, TUN, сеть»). Удалятся только эти пакеты, ядра и Podkop не затрагиваются.', 'Удалить', true))) return;
+          try { await post('api/kmods/remove'); toast('Удаляю…', 'ok'); } catch (e) { toastErr(e); }
+          depLoad();
+        } }, j.running ? 'Выполняется…' : 'Удалить зависимые компоненты')),
+      j.error ? note('err', j.error) : null,
+      (j.running || j.finished) && j.title === 'Удаление зависимых компонентов' ? h('pre', { class: 'mono', style: 'max-height:220px;overflow:auto;white-space:pre-wrap;margin-top:10px' }, (j.output || []).join('\n')) : null));
+    if (j.running && alive) depT = setTimeout(depLoad, 1500);
+  }
+
   draw();
   pkLoad();
+  depLoad();
   get('api/core/job').then((j) => { if (j && j.running) poll(); else drawJob(j && j.finished && j.error ? j : null); }).catch(() => {});
 
   const d = s.download;
@@ -177,5 +205,5 @@ export default async function (root) {
         field('Свой бинарник amnezia-box', txt(d, 'amnezia_path', { ph: '/opt/bin/amnezia-box' }))),
       h('div', { class: 'row' }, h('p', { class: 'small mute grow' }, 'Изменения вступают в силу после сохранения настроек. Свободное место считается по сохранённому каталогу.'),
         h('button', { class: 'btn', onclick: async () => { try { await st.loadSystem(); draw(); pkLoad(); toast('Место пересчитано', 'ok'); } catch (e) { toastErr(e); } } }, 'Пересчитать место'))));
-  return () => { alive = false; clearTimeout(pollT); clearTimeout(pkT); };
+  return () => { alive = false; clearTimeout(pollT); clearTimeout(pkT); clearTimeout(depT); };
 }

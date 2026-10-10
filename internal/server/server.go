@@ -148,6 +148,13 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "podkop", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Podkop.Status(r.Context())) }, true)
 	api("POST", "podkop/{action}", s.podkopAction, true)
 	api("GET", "kmods", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Kmods.Check()) }, true)
+	api("POST", "kmods/remove", func(w http.ResponseWriter, r *http.Request) {
+		if started, why := s.Kmods.Remove(); !started {
+			fail(w, 409, why)
+			return
+		}
+		ok(w, map[string]any{"started": true})
+	}, true)
 	api("POST", "kmods/install", func(w http.ResponseWriter, r *http.Request) {
 		if started, why := s.Kmods.Install(); !started {
 			fail(w, 409, why)

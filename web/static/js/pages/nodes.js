@@ -7,6 +7,9 @@ export const TYPES = [['vless', 'VLESS'], ['vmess', 'VMess'], ['trojan', 'Trojan
 const TYPE_NAME = Object.fromEntries(TYPES);
 const SS_METHODS = ['2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305', 'aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305', 'xchacha20-ietf-poly1305', 'none'];
 let ifacePromise = null;
+let ifList = [];
+// Выпадающий список интерфейсов: имя, состояние и адреса; текущее значение сохраняется, даже если интерфейса сейчас нет.
+const ifaceSelect = (obj, key, empty) => sel(obj, key, [['', empty || '— не выбран —'], ...ifList.map((i) => [i.name, i.name + (i.up ? '' : ' (не активен)') + ((i.addrs || []).length ? ' — ' + i.addrs.slice(0, 2).join(', ') : '')])]);
 const ifaces = () => (ifacePromise = ifacePromise || get('api/interfaces').catch(() => []));
 
 export default async function (root) {
@@ -104,6 +107,7 @@ export default async function (root) {
     const d = isNew ? { name: '', type: type || 'vless', server: '', port: 443, udp: true } : JSON.parse(JSON.stringify(orig));
     if (isNew) defaults(d);
     const list = await ifaces();
+    ifList = list || [];
     const body = h('div');
     const dl = h('datalist', { id: 'ifl' }, (list || []).map((i) => h('option', { value: i.name })));
     function build() {
@@ -153,7 +157,7 @@ function nodeForm(d, rebuild) {
     ...(t === 'iface' ? [] : [field('Сервер', txt(d, 'server', { ph: 'example.com или IP' })),
       field('Порт', num(d, 'port', { min: 1, max: 65535 }))])));
   if (t === 'iface') {
-    out.append(fgrid(field('Интерфейс', txt(d, 'bind_interface', { ph: 'например, sstp-vpn0, ppp0, l2tp-vpn, tun1', list: 'ifl' }),
+    out.append(fgrid(field('Интерфейс', ifaceSelect(d, 'bind_interface', '— выберите интерфейс —'),
       'Туннель должен быть уже поднят в системе (OpenWrt: Сеть → Интерфейсы; Keenetic: подключение SSTP/L2TP/PPTP/OpenVPN). Панель направит через него трафик по вашим правилам; сам туннель не настраивается и не запускается.')));
     out.append(help('Такой узел можно добавить в группу: urltest сам переключится на другой узел, если системный VPN откажет; в Mihomo ещё есть fallback — первый доступный по порядку.'));
     return out;
@@ -247,7 +251,7 @@ function nodeForm(d, rebuild) {
 
   out.append(sec('Дополнительно', fgrid(
     field('Цепочка (detour)', sel(d, 'detour', [['', 'нет'], ...st.nodeNames().filter((n) => n !== d.name).map((n) => [n, n])]), 'Подключаться к этому узлу не напрямую, а через другой узел (двойной прокси).'),
-    field('Привязка к интерфейсу', txt(d, 'bind_interface', { ph: 'например, eth3 или wan2', list: 'ifl' }), 'Выпустить трафик узла через конкретный WAN-интерфейс (мультиWAN).'))),
+    field('Привязка к интерфейсу', ifaceSelect(d, 'bind_interface', '— не привязывать —'), 'Выпустить трафик узла через конкретный WAN-интерфейс (мультиWAN).'))),
   chk(d, 'disabled', 'Узел выключен'));
   return out;
 }

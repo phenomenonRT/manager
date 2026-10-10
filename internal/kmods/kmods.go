@@ -19,6 +19,7 @@ var Packages = []string{"kmod-tun", "kmod-nft-tproxy", "kmod-nft-queue"}
 
 // Job — состояние установки.
 type Job struct {
+	Title    string   `json:"title,omitempty"`
 	Running  bool     `json:"running"`
 	Finished bool     `json:"finished"`
 	Error    string   `json:"error,omitempty"`
@@ -27,13 +28,14 @@ type Job struct {
 
 // Status — какие модули есть и можно ли их поставить.
 type Status struct {
-	Installable bool   `json:"installable"` // OpenWrt и есть opkg/apk
-	Manager     string `json:"manager,omitempty"`
-	TUN         bool   `json:"tun"`
-	TProxy      bool   `json:"tproxy"`
-	Queue       bool   `json:"queue"` // nfqueue: нужен для auto_redirect в TUN
-	Command     string `json:"command"`
-	Job         Job    `json:"job"`
+	Installable bool     `json:"installable"` // OpenWrt и есть opkg/apk
+	Manager     string   `json:"manager,omitempty"`
+	TUN         bool     `json:"tun"`
+	TProxy      bool     `json:"tproxy"`
+	Queue       bool     `json:"queue"` // nfqueue: нужен для auto_redirect в TUN
+	Command     string   `json:"command"`
+	Present     []string `json:"present"` // какие из Packages установлены менеджером пакетов
+	Job         Job      `json:"job"`
 }
 
 // Manager запускает установку (одновременно не более одной).
@@ -115,8 +117,16 @@ func (m *Manager) Check() Status {
 	} else {
 		st.Command = "opkg update && opkg install " + strings.Join(Packages, " ")
 	}
+	st.Present = []string{}
+	if mgr != "" {
+		for _, p := range Packages {
+			if pkgInstalled(mgr, p) {
+				st.Present = append(st.Present, p)
+			}
+		}
+	}
 	m.mu.Lock()
-	st.Job = Job{Running: m.job.Running, Finished: m.job.Finished, Error: m.job.Error, Output: append([]string{}, m.job.Output...)}
+	st.Job = Job{Title: m.job.Title, Running: m.job.Running, Finished: m.job.Finished, Error: m.job.Error, Output: append([]string{}, m.job.Output...)}
 	m.mu.Unlock()
 	return st
 }
@@ -132,9 +142,50 @@ func (m *Manager) Install() (bool, string) {
 		m.mu.Unlock()
 		return false, "установка уже идёт"
 	}
-	m.job = Job{Running: true}
+	m.job = Job{Running: true, Title: "Установка модулей ядра"}
 	m.mu.Unlock()
 	go m.run(mgr)
+	return true, ""
+}
+
+// Remove удаляет установленные пакеты модулей ядра (зависимости TUN и tproxy).
+func (m *Manager) Remove() (bool, string) {
+	mgr := manager()
+	if m.Info.OS != platform.OpenWrt || mgr == "" {
+		return false, "удаление доступно только на OpenWrt с opkg или apk"
+	}
+	var have []string
+	for _, p := range Packages {
+		if pkgInstalled(mgr, p) {
+			have = append(have, p)
+		}
+	}
+	if len(have) == 0 {
+		return false, "зависимых компонентов нет: нечего удалять"
+	}
+	m.mu.Lock()
+	if m.job.Running {
+		m.mu.Unlock()
+		return false, "операция уже идёт"
+	}
+	m.job = Job{Running: true, Title: "Удаление зависимых компонентов"}
+	m.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		var err error
+		if mgr == "apk" {
+			err = m.exec(ctx, "apk", append([]string{"del"}, have...)...)
+		} else {
+			err = m.exec(ctx, "opkg", append([]string{"remove"}, have...)...)
+		}
+		m.mu.Lock()
+		m.job.Running, m.job.Finished = false, true
+		if err != nil {
+			m.job.Error = "удалить не удалось: " + err.Error()
+		}
+		m.mu.Unlock()
+	}()
 	return true, ""
 }
 
