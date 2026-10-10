@@ -171,6 +171,13 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	if bin == "" {
 		return fmt.Errorf("ядро %s не установлено — установите его в разделе «Компоненты»", installer.BinName(set.Core))
 	}
+	if set.Tun.Enabled {
+		if err := ensureTun(); err != nil {
+			s.lastErr = err.Error()
+			s.Logs.Add("[panel] " + s.lastErr)
+			return err
+		}
+	}
 	res, err := Render(set)
 	if err != nil {
 		s.lastErr = err.Error()

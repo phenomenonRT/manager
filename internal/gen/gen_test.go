@@ -239,7 +239,7 @@ func TestAmneziaAWG(t *testing.T) {
 	s := sample()
 	s.Core = model.CoreAmnezia
 	s.Nodes = append(s.Nodes, model.Node{Name: "awg1", Type: "awg", Server: "1.2.3.4", Port: 51820, PrivateKey: "P", PeerPublicKey: "Q",
-		Addresses: []string{"10.8.0.2/32"}, AWG: &model.AWG{Jc: 4, Jmin: 40, Jmax: 70, S1: 10, H1: "1234-5678"}})
+		PreSharedKey: "PSK", Addresses: []string{"10.8.0.2/32"}, AWG: &model.AWG{Jc: 4, Jmin: 40, Jmax: 70, S1: 10, H1: "1234-5678"}})
 	if hasError(s.Validate()) {
 		t.Fatalf("validate: %v", s.Validate())
 	}
@@ -247,10 +247,15 @@ func TestAmneziaAWG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{`"type": "awg"`, `"jc": 4`, `"jmin": 40`, `"h1": "1234-5678"`} {
+	for _, w := range []string{`"type": "awg"`, `"jc": 4`, `"jmin": 40`, `"h1": "1234-5678"`, `"preshared_key": "PSK"`} {
 		if !strings.Contains(res.Config, w) {
 			t.Errorf("нет %s", w)
 		}
+	}
+	one := model.Settings{}
+	ep, _ := json.Marshal(sbAWG(&one, s.Nodes[len(s.Nodes)-1]))
+	if !strings.Contains(string(ep), "preshared_key") || strings.Contains(string(ep), "pre_shared_key") || strings.Contains(string(ep), `"system"`) {
+		t.Errorf("в схеме amnezia-box нет pre_shared_key и system для awg: %s", ep)
 	}
 	if strings.Contains(res.Config, `"s2"`) {
 		t.Error("нулевой s2 не должен выводиться")

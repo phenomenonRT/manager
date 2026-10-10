@@ -232,8 +232,10 @@ func sbInbounds(s *model.Settings) []any {
 			Opt("mtu", s.Tun.MTU).
 			Set("auto_route", s.Tun.AutoRoute).
 			Opt("strict_route", s.Tun.StrictRoute).
-			Opt("auto_redirect", s.Tun.AutoRedirect && s.Tun.AutoRoute).
-			Set("stack", s.Tun.Stack)
+			Opt("auto_redirect", s.Tun.AutoRedirect && s.Tun.AutoRoute)
+		if s.Core != model.CoreAmnezia { // в sing-box 1.15 (amnezia-box) параметр stack устарел
+			t.Set("stack", s.Tun.Stack)
+		}
 		if len(s.Tun.ExcludeCIDR) > 0 {
 			t.Set("route_exclude_address", s.Tun.ExcludeCIDR)
 		}
@@ -450,14 +452,12 @@ func sbAWG(s *model.Settings, n model.Node) *O {
 	if len(allowed) == 0 {
 		allowed = []string{"0.0.0.0/0", "::/0"}
 	}
+	// поля — по схеме amnezia-box: preshared_key (без подчёркивания), useIntegratedTun вместо system
 	peer := NewO().Set("address", n.Server).Set("port", n.Port).Set("public_key", n.PeerPublicKey).
-		Opt("pre_shared_key", n.PreSharedKey).Set("allowed_ips", allowed)
+		Opt("preshared_key", n.PreSharedKey).Set("allowed_ips", allowed).Set("persistent_keepalive_interval", 25)
 	o := NewO().Set("type", "awg").Set("tag", n.Name).
-		Set("system", n.System).Opt("mtu", n.MTU).
+		Opt("useIntegratedTun", n.System).Opt("mtu", n.MTU).
 		Set("address", n.Addresses).Set("private_key", n.PrivateKey)
-	if n.System {
-		o.Set("name", wgIfaceName(n.Name))
-	}
 	if a := n.AWG; a != nil {
 		o.Opt("jc", a.Jc).Opt("jmin", a.Jmin).Opt("jmax", a.Jmax).
 			Opt("s1", a.S1).Opt("s2", a.S2).Opt("s3", a.S3).Opt("s4", a.S4).
