@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,8 +29,7 @@ const (
 	initScript = "/etc/init.d/podkop"
 
 	// Рекомендации из документации Podkop (МБ свободного места).
-	minFreeMB          = 20
-	minFreeNoSingboxMB = 40
+	minFreeMB = 25
 )
 
 // latestURL — последний релиз Podkop (переопределяется в тестах).
@@ -88,13 +88,8 @@ func pkgManager() string {
 	return ""
 }
 
-// needMB — сколько места нужно для установки: больше, если sing-box ещё не стоит.
-func needMB() int {
-	if _, err := exec.LookPath("sing-box"); err != nil {
-		return minFreeNoSingboxMB
-	}
-	return minFreeMB
-}
+// needMB — сколько места нужно для установки (требование Podkop: от 25 МБ, на 16 МБ флеш не ставится).
+func needMB() int { return minFreeMB }
 
 func freeMB() int {
 	dir := "/"
@@ -226,7 +221,7 @@ func (m *Manager) finish(err error) {
 
 // Install запускает официальный установщик (при mirror=true — через зеркало podkop.net,
 // если GitHub недоступен). Ввод закрыт: установщик не должен ждать ответов.
-func (m *Manager) Install() error {
+func (m *Manager) Install(force bool) error {
 	if ok, why := m.supported(); !ok {
 		return errors.New(why)
 	}
@@ -234,10 +229,10 @@ func (m *Manager) Install() error {
 		return errors.New("в системе нет opkg или apk")
 	}
 	need := needMB()
-	if f := freeMB(); f > 0 && f < need {
-		return fmt.Errorf("свободно %d МБ, для установки Podkop нужно не меньше %d МБ (sing-box ставится как зависимость). Освободите место или используйте extroot", f, need)
+	if f := freeMB(); f > 0 && f < need && !force {
+		return fmt.Errorf("свободно %d МБ, для установки Podkop нужно не меньше %d МБ (устройства с флеш-памятью 16 МБ не поддерживаются). Освободите место, подключите extroot или включите «Принудительная установка» в настройках этой страницы", f, need)
 	}
-	return m.installLatest()
+	return m.installLatest(force)
 }
 
 // Remove останавливает и удаляет Podkop.
@@ -351,7 +346,7 @@ func download(ctx context.Context, url, dst string) error {
 
 // installLatest скачивает пакеты последнего релиза с GitHub и ставит их менеджером
 // пакетов; зависимости (sing-box и др.) подтягиваются из репозиториев системы.
-func (m *Manager) installLatest() error {
+func (m *Manager) installLatest(force bool) error {
 	if err := m.begin("Установка Podkop"); err != nil {
 		return err
 	}
@@ -361,6 +356,19 @@ func (m *Manager) installLatest() error {
 		pm, ext := pkgManager(), ".ipk"
 		if pm == "apk" {
 			ext = ".apk"
+		}
+		before := installedPkgs(pm)
+		if f := freeMB(); force && f > 0 && f < minFreeMB {
+			m.add(fmt.Sprintf("принудительная установка: свободно %d МБ при рекомендованных %d МБ; при неудаче всё будет откачено", f, minFreeMB))
+		}
+		rollback := func(reason error) {
+			m.add("установка не удалась: " + reason.Error())
+			m.add("откат: удаляю установленное в этой попытке")
+			if err := m.rollback(ctx, pm, before); err != nil {
+				m.finish(fmt.Errorf("%v; откат тоже не удался: %v", reason, err))
+				return
+			}
+			m.finish(fmt.Errorf("%v; всё, что было установлено, удалено", reason))
 		}
 		m.add("запрос последнего релиза: " + latestURL)
 		req, _ := http.NewRequestWithContext(ctx, "GET", latestURL, nil)
@@ -426,11 +434,60 @@ func (m *Manager) installLatest() error {
 		_ = pw.Close()
 		time.Sleep(200 * time.Millisecond)
 		if err != nil {
-			m.finish(fmt.Errorf("установка пакетов завершилась с кодом %s", exitCode(err)))
+			rollback(fmt.Errorf("установка пакетов завершилась с кодом %s", exitCode(err)))
+			return
+		}
+		if !Installed() {
+			rollback(errors.New("после установки Podkop не найден в системе"))
 			return
 		}
 		m.add("готово: Podkop " + rel.Tag)
 		m.finish(nil)
 	}()
 	return nil
+}
+
+// installedPkgs — имена установленных пакетов (для отката).
+func installedPkgs(pm string) map[string]bool {
+	out := map[string]bool{}
+	var b []byte
+	switch pm {
+	case "opkg":
+		b, _ = exec.Command("opkg", "list-installed").Output()
+	case "apk":
+		b, _ = exec.Command("apk", "info").Output()
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(l); len(f) > 0 {
+			out[f[0]] = true
+		}
+	}
+	return out
+}
+
+// rollback удаляет пакеты, появившиеся после снимка before.
+func (m *Manager) rollback(ctx context.Context, pm string, before map[string]bool) error {
+	var added []string
+	for n := range installedPkgs(pm) {
+		if !before[n] {
+			added = append(added, n)
+		}
+	}
+	if len(added) == 0 {
+		m.add("откатывать нечего")
+		return nil
+	}
+	sort.Strings(added)
+	var cmd *exec.Cmd
+	if pm == "apk" {
+		cmd = exec.CommandContext(ctx, "apk", append([]string{"del"}, added...)...)
+	} else {
+		cmd = exec.CommandContext(ctx, "opkg", append([]string{"remove", "--force-depends"}, added...)...)
+	}
+	m.add("$ " + strings.Join(cmd.Args, " "))
+	out, err := cmd.CombinedOutput()
+	for _, l := range strings.Split(string(out), "\n") {
+		m.add(l)
+	}
+	return err
 }

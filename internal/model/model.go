@@ -213,6 +213,8 @@ type Download struct {
 	MihomoPath  string `json:"mihomo_path"`
 	AmneziaPath string `json:"amnezia_path"`
 	BinDir      string `json:"bin_dir"` // куда устанавливать ядра
+	// ForceInstall — ставить Podkop, даже если места меньше рекомендованного; при неудаче установка откатывается.
+	ForceInstall bool `json:"force_install"`
 }
 
 // Default возвращает настройки «из коробки».

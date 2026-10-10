@@ -129,26 +129,32 @@ export default async function (root) {
     if (!alive) return;
     pk.need = p.need_mb || 20; if (alive) drawMeter();
     const busy = p.job && p.job.running;
+    const force = !!(s.download && s.download.force_install);
     const lack = p.supported && !p.installed && p.free_mb > 0 && p.free_mb < p.need_mb;
-    const kids = [h('div', { class: 'mod-head' }, h('b', { class: 'mod-name' }, 'Podkop'), h('span', { class: 'mod-tag' }, 'Готовая маршрутизация на sing-box для OpenWrt'), h('span', { class: 'grow' }), p.installed ? (p.running ? badge('работает', 'ok') : badge('остановлен')) : badge('не установлен', 'warn'))];
+    const blocked = lack && !force;
+    const kids = [h('div', { class: 'mod-head' }, h('span', { class: 'mod-name' }, h('b', 'Podkop')),
+      h('span', { class: 'mod-tag' }, 'Маршрутизация по спискам на базе sing-box для OpenWrt'), h('span', { class: 'grow' }),
+      p.installed ? (p.running ? badge('работает', 'ok') : badge('остановлен')) : null,
+      p.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn'))];
     if (!p.supported) kids.push(h('p', { class: 'small mute' }, p.reason));
     else {
-      kids.push(h('p', { class: 'small mute' }, 'Маршрутизация на базе sing-box для OpenWrt. Это альтернатива ядру панели: вместе они не запускаются (панель это блокирует). Настройки самого Podkop — в LuCI: Службы → Podkop.'));
-      kids.push(h('dl', { class: 'kv' }, h('dt', 'Установлен'), h('dd', p.installed ? badge('да', 'ok') : badge('нет', 'warn')),
-        h('dt', 'Версия'), h('dd', p.version || '—'),
-        h('dt', 'Служба'), h('dd', p.installed ? (p.running ? badge('работает', 'ok') : badge('остановлена')) : '—'),
-        h('dt', 'Свободно на флеш'), h('dd', p.free_mb + ' МБ' + (p.installed ? '' : ' (нужно не меньше ' + p.need_mb + ' МБ)'))));
-      if (lack) kids.push(note('warn', 'Не хватает места: свободно ' + p.free_mb + ' МБ, для установки нужно не меньше ' + p.need_mb + ' МБ (sing-box ставится как зависимость). Освободите место или подключите накопитель (extroot).'));
+      kids.push(h('div', { class: 'chips' }, ['OpenWrt 24.10+', 'свои списки доменов', 'управляет sing-box и dnsmasq', 'не работает вместе с ядром панели'].map((x) => h('span', x))));
+      kids.push(h('div', { class: 'mod-meta mono small' }, p.installed
+        ? [h('span', 'v' + (p.version || '?').replace(/^v/, '')), h('span', 'свободно ' + p.free_mb + ' МБ')]
+        : [h('span', 'нужно от ' + p.need_mb + ' МБ, свободно ' + p.free_mb + ' МБ')]));
+      if (lack) kids.push(note('warn', force
+        ? 'Места меньше рекомендованного (' + p.free_mb + ' из ' + p.need_mb + ' МБ), но включена принудительная установка: при неудаче всё установленное будет удалено.'
+        : 'Не хватает места: свободно ' + p.free_mb + ' МБ, нужно не меньше ' + p.need_mb + ' МБ (на устройствах с флеш-памятью 16 МБ Podkop не поддерживается). Освободите место, подключите extroot или включите «Принудительная установка» в настройках ниже и сохраните их.'));
       kids.push(p.installed
-        ? h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin-top:10px' },
+        ? h('div', { class: 'mod-act' },
           h('button', { class: 'btn primary', disabled: busy, onclick: () => pkAct('start') }, 'Запустить'),
           h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('restart') }, 'Перезапустить'),
           h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('stop') }, 'Остановить'),
           h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('enable') }, 'В автозапуск'),
           h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('disable') }, 'Убрать из автозапуска'),
           h('button', { class: 'btn danger', disabled: busy, onclick: () => pkAct('remove', 'Остановить и удалить Podkop (пакеты podkop, luci-app-podkop, luci-i18n-podkop-ru)?') }, 'Удалить'))
-        : h('div', { class: 'row install' + (lack ? ' lowspace' : ''), style: 'flex-wrap:wrap;gap:8px;margin-top:10px' },
-          h('button', { class: 'btn primary', disabled: busy || lack, onclick: () => pkAct('install', 'Скачать последний релиз Podkop с GitHub (itdoginfo/podkop) и установить пакет podkop? Зависимости (sing-box и др.) подтянутся из репозиториев роутера.') }, 'Установить')));
+        : h('div', { class: 'mod-act' + (blocked ? ' lowspace' : '') },
+          h('button', { class: 'btn primary', disabled: busy || blocked, onclick: () => pkAct('install', 'Скачать последний релиз Podkop с GitHub (itdoginfo/podkop) и установить пакет podkop? Зависимости (sing-box и др.) подтянутся из репозиториев роутера.' + (force ? ' Включена принудительная установка: при неудаче всё установленное будет удалено.' : '')) }, force && lack ? 'Установить принудительно' : 'Установить')));
       if (p.job && (p.job.running || p.job.finished)) {
         const pre = h('pre', { class: 'mono', style: 'max-height:300px;overflow:auto;white-space:pre-wrap;margin-top:10px' }, (p.job.output || []).join('\n'));
         kids.push(h('div', { class: 'small', style: 'margin-top:10px' }, h('b', p.job.title || 'Операция')),
@@ -156,7 +162,7 @@ export default async function (root) {
         setTimeout(() => { pre.scrollTop = pre.scrollHeight; }, 0);
       }
     }
-    clear(podkopBox).append(h('div', { class: 'mod pk' }, kids));
+    clear(podkopBox).append(h('div', { class: 'mod' }, kids));
     if (busy && alive) pkT = setTimeout(pkLoad, 1500);
   }
 
@@ -203,6 +209,7 @@ export default async function (root) {
         field('Свой бинарник sing-box', txt(d, 'singbox_path', { ph: '/opt/bin/sing-box' }), 'Если указан, используется он, а не скачанный панелью. Полезно для сборок с нужными тегами.'),
         field('Свой бинарник Mihomo', txt(d, 'mihomo_path', { ph: '/opt/bin/mihomo' })),
         field('Свой бинарник amnezia-box', txt(d, 'amnezia_path', { ph: '/opt/bin/amnezia-box' }))),
+      chk(d, 'force_install', 'Принудительная установка Podkop', 'Ставить Podkop, даже если свободного места меньше 25 МБ. Если установка не удалась, всё скачанное и установленное в этой попытке удаляется. Вступает в силу после сохранения настроек.', { onchange: () => pkLoad() }),
       h('div', { class: 'row' }, h('p', { class: 'small mute grow' }, 'Изменения вступают в силу после сохранения настроек. Свободное место считается по сохранённому каталогу.'),
         h('button', { class: 'btn', onclick: async () => { try { await st.loadSystem(); draw(); pkLoad(); toast('Место пересчитано', 'ok'); } catch (e) { toastErr(e); } } }, 'Пересчитать место'))));
   return () => { alive = false; clearTimeout(pollT); clearTimeout(pkT); clearTimeout(depT); };

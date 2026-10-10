@@ -750,7 +750,7 @@ func (s *Server) podkopAction(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch a := r.PathValue("action"); a {
 	case "install":
-		err = s.Podkop.Install()
+		err = s.Podkop.Install(s.St.Get().Download.ForceInstall)
 	case "remove":
 		err = s.Podkop.Remove()
 	case "start", "restart":
