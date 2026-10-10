@@ -17,7 +17,7 @@ export default async function (root) {
   const coreRows = h('div');
   const podkopBox = h('div');
   const jobBox = h('div');
-  apd(root, pageHead('Компоненты', 'Ядра sing-box, Mihomo и amnezia-box, а также Podkop: установка и выбор активного ядра'),
+  apd(root, pageHead('Компоненты', 'Ядра sing-box, Mihomo и amnezia-box, а также Podkop: установка, удаление и выбор активного ядра'),
     h('div', { class: 'bay' }, meterBox, coreRows, podkopBox), jobBox);
 
   // Хватает ли места под установку: свободное место + размер уже стоящей копии (она заменится).
@@ -55,12 +55,12 @@ export default async function (root) {
     clear(coreRows);
     for (const id of ORDER) {
       const c = CORES[id], info = cores[id] || {};
-      const ver = { v: '' };
       const sel = s.core === id;
       const sp = space(id);
       const lack = !sp.ok;
-      const btn = h('button', { class: 'btn primary' + (lack ? ' lowspace' : ''), disabled: lack, title: lack ? 'Не хватает места' : null, onclick: (e) => { e.stopPropagation(); install(id, ver.v); } }, info.installed ? 'Обновить' : 'Установить');
+      const btn = h('button', { class: 'btn primary' + (lack ? ' lowspace' : ''), disabled: lack, title: lack ? 'Не хватает места' : null, onclick: (e) => { e.stopPropagation(); install(id, ''); } }, info.installed ? 'Обновить' : 'Установить');
       const pkgBtn = c.pkg ? h('button', { class: 'btn', title: 'Пакет из репозитория OpenWrt/Entware (opkg или apk): обычно компактнее релиза GitHub.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы') : null;
+      const delBtn = h('button', { class: 'btn danger', onclick: async (e) => { e.stopPropagation(); remove(id); } }, 'Удалить');
       const pick = h('input', { type: 'radio', name: 'core', checked: sel, 'aria-label': 'Использовать ' + c.name, onchange: () => { s.core = id; st.touch(); draw(); } });
       coreRows.append(h('div', { class: 'mod' + (sel ? ' on' : ''), onclick: (e) => { if (e.target.closest('button,input,label,details')) return; pick.click(); } },
         h('div', { class: 'mod-head' }, h('label', { class: 'mod-name' }, pick, h('b', c.name)),
@@ -69,8 +69,17 @@ export default async function (root) {
         h('div', { class: 'chips' }, c.chips.map((x) => h('span', x))),
         h('div', { class: 'mod-meta mono small' }, info.installed ? [h('span', 'v' + (info.version || '?').replace(/^v/, '')), h('span', info.path)] : [h('span', 'нужно около ' + (sp.need || '?') + ' МБ')]),
         lack ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Скачанный файл при нехватке места удаляется. Подключите накопитель и укажите каталог установки ниже' + (c.pkg ? ' либо поставьте ядро «Из пакетов системы».' : '.')) : null,
-        h('div', { class: 'mod-act' }, h('input', { type: 'text', class: lack ? 'lowspace' : '', disabled: lack, placeholder: 'версия (пусто — последняя)', 'aria-label': 'Версия ' + c.name, spellcheck: 'false', oninput: (e) => { ver.v = e.target.value.trim(); } }), btn, pkgBtn)));
+        h('div', { class: 'mod-act' }, btn, pkgBtn, info.installed ? delBtn : null)));
     }
+  }
+
+  async function remove(core) {
+    if (!(await confirmBox('Удалить ' + CORES[core].name + ' с роутера? Освободится место на флеш-памяти; настройки панели сохранятся.', 'Удалить', true))) return;
+    try {
+      const r = await post('api/core/remove', { core });
+      toast('Удалено: ' + r.removed, 'ok');
+      await st.loadSystem(); draw();
+    } catch (e) { toastErr(e); }
   }
 
   async function install(core, version, source) {

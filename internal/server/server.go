@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 	"corepanel/internal/podkop"
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
+	"corepanel/internal/sysauth"
 	"corepanel/web"
 )
 
@@ -79,7 +81,7 @@ func (s *Server) makeToken() string {
 }
 
 func (s *Server) sign(exp string) string {
-	m := hmac.New(sha256.New, append(append([]byte{}, s.key...), s.St.PanelInfo().Hash...))
+	m := hmac.New(sha256.New, append(append([]byte{}, s.key...), s.St.PanelInfo().Epoch...))
 	m.Write([]byte(exp))
 	return fmt.Sprintf("%x", m.Sum(nil))
 }
@@ -120,7 +122,7 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "session", s.session, false)
 	api("POST", "login", s.login, false)
 	api("POST", "logout", s.logout, false)
-	api("POST", "password", s.password, true)
+	api("POST", "auth", s.setAuth, true)
 	api("POST", "panel", s.panel, true)
 	api("GET", "system", s.system, true)
 	api("GET", "settings", func(w http.ResponseWriter, r *http.Request) { ok(w, s.St.Get()) }, true)
@@ -132,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST", "service/stop", s.svc("stop"), true)
 	api("POST", "service/restart", s.svc("restart"), true)
 	api("POST", "core/install", s.coreInstall, true)
+	api("POST", "core/remove", s.coreRemove, true)
 	api("GET", "core/job", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Inst.Job.Snapshot()) }, true)
 	api("POST", "import", s.importText, true)
 	api("POST", "import/url", s.importURL, true)
@@ -158,7 +161,7 @@ func (s *Server) Handler() http.Handler {
 
 	files := http.FileServer(http.FS(web.FS()))
 	mux.Handle("/", noCache(files))
-	return secure(mux)
+	return secure(s.localOnly(mux))
 }
 
 func noCache(h http.Handler) http.Handler {
@@ -209,13 +212,16 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 // ---------- сессии ----------
 
 func (s *Server) authed(r *http.Request) bool {
+	if !s.St.PanelInfo().AuthEnabled {
+		return true // вход выключен (доступ ограничен локальной сетью, см. localOnly)
+	}
 	c, err := r.Cookie(cookieName)
 	return err == nil && s.validToken(c.Value)
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	p := s.St.PanelInfo()
-	ok(w, map[string]any{"authenticated": s.authed(r), "must_change": p.MustChange, "user": p.Username})
+	ok(w, map[string]any{"authenticated": s.authed(r), "auth_enabled": p.AuthEnabled, "user": "root"})
 }
 
 func clientIP(r *http.Request) string {
@@ -240,7 +246,15 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Unlock()
-	if !s.St.CheckLogin(in.Username, in.Password) {
+	good, verr := false, error(nil)
+	if in.Username == "" || in.Username == "root" {
+		good, verr = sysauth.Verify("root", in.Password)
+	}
+	if verr != nil && !good {
+		fail(w, 400, "Не удаётся проверить пароль root: "+verr.Error())
+		return
+	}
+	if !good {
 		s.mu.Lock()
 		if f == nil {
 			f = &failure{}
@@ -252,7 +266,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mu.Unlock()
 		time.Sleep(500 * time.Millisecond)
-		fail(w, 401, "неверный логин или пароль")
+		fail(w, 401, "неверный пароль root")
 		return
 	}
 	s.mu.Lock()
@@ -261,7 +275,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.makeToken(), Path: "/", HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
 	p := s.St.PanelInfo()
-	ok(w, map[string]any{"authenticated": true, "must_change": p.MustChange, "user": p.Username})
+	ok(w, map[string]any{"authenticated": true, "auth_enabled": p.AuthEnabled, "user": "root"})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -269,27 +283,57 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]bool{"ok": true})
 }
 
-func (s *Server) password(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Old, New string }
+// setAuth включает или выключает вход. Включить можно, только подтвердив пароль root:
+// так нельзя случайно запереть себя с паролем, которого не существует.
+func (s *Server) setAuth(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Enabled  bool
+		Password string
+	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if !s.St.CheckLogin(s.St.PanelInfo().Username, in.Old) {
-		fail(w, 400, "текущий пароль неверен")
-		return
+	if in.Enabled {
+		okp, err := sysauth.Verify("root", in.Password)
+		if err != nil && !okp {
+			fail(w, 400, "Вход не включён: "+err.Error())
+			return
+		}
+		if !okp {
+			fail(w, 400, "неверный пароль root")
+			return
+		}
 	}
-	if len(in.New) < 6 {
-		fail(w, 400, "новый пароль должен быть не короче 6 символов")
-		return
-	}
-	if err := s.St.SetPassword(in.New); err != nil {
+	if err := s.St.SetAuth(in.Enabled); err != nil {
 		fail(w, 500, err.Error())
 		return
 	}
-	// старые сессии стали недействительны — выдаём новую текущему браузеру
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.makeToken(), Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
-	ok(w, map[string]bool{"ok": true})
+	if in.Enabled { // текущему браузеру выдаём новую сессию
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.makeToken(), Path: "/", HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
+	}
+	ok(w, map[string]any{"auth_enabled": in.Enabled})
+}
+
+// localOnly: пока вход выключен, панель отвечает только устройствам локальной сети
+// (иначе открытая на WAN панель была бы доступна всему интернету без пароля).
+func (s *Server) localOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.St.PanelInfo().AuthEnabled && !isLocalAddr(clientIP(r)) {
+			fail(w, 403, "вход в панель выключен, поэтому она доступна только из локальной сети; включите вход по паролю root в разделе «Система»")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLocalAddr(ip string) bool {
+	a, err := netip.ParseAddr(strings.Split(ip, "%")[0])
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	return a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast()
 }
 
 func (s *Server) panel(w http.ResponseWriter, r *http.Request) {
@@ -492,6 +536,23 @@ func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, s.Inst.Job.Snapshot())
+}
+
+func (s *Server) coreRemove(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Core string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if st := s.Sup.Status(); (st.State == "running" || st.State == "starting") && st.Core == in.Core {
+		fail(w, 409, "Ядро сейчас работает — сначала остановите его.")
+		return
+	}
+	what, err := s.Inst.Remove(r.Context(), in.Core, s.St.Get().Download)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	ok(w, map[string]string{"removed": what})
 }
 
 // ---------- импорт и ключи ----------

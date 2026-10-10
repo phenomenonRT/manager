@@ -747,3 +747,56 @@ func (in *Installer) installPackage(ctx context.Context, core string) (string, e
 	}
 	return "", fmt.Errorf("пакет ядра не установлен. %s. В репозитории этой системы может не быть такого пакета — тогда используйте установку с GitHub на накопитель", lastLines(lastErr, 1))
 }
+
+// Remove удаляет ядро, установленное панелью (каталог установки) и, если оно поставлено
+// пакетом системы, сам пакет. Свой бинарник из настроек не трогается.
+func (in *Installer) Remove(ctx context.Context, core string, d model.Download) (string, error) {
+	if core != model.CoreSingbox && core != model.CoreMihomo && core != model.CoreAmnezia {
+		return "", fmt.Errorf("неизвестное ядро «%s»", core)
+	}
+	if in.Job.Snapshot().Running {
+		return "", errors.New("сейчас идёт установка — дождитесь её окончания")
+	}
+	var done []string
+	final := filepath.Join(in.BinDir(d), BinName(core))
+	for _, f := range []string{final, final + ".new", final + ".bak"} {
+		if err := os.Remove(f); err == nil {
+			done = append(done, f)
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("не удалось удалить %s: %v", f, err)
+		}
+	}
+	// ядро из пакета системы (лежит в /usr/bin или /opt/sbin, найдётся через PATH)
+	if _, err := exec.LookPath(BinName(core)); err == nil {
+		var rm []string
+		if _, _, perr := pkgCommands(); perr == nil {
+			if _, e := exec.LookPath("opkg"); e == nil {
+				rm = []string{"opkg", "remove"}
+			} else {
+				rm = []string{"apk", "del"}
+			}
+		}
+		if rm != nil {
+			for _, name := range PackageNames[core] {
+				if err := exec.CommandContext(ctx, rm[0], append(append([]string{}, rm[1:]...), name)...).Run(); err == nil {
+					done = append(done, "пакет "+name)
+					break
+				}
+			}
+		}
+	}
+	custom := d.SingboxPath
+	switch core {
+	case model.CoreMihomo:
+		custom = d.MihomoPath
+	case model.CoreAmnezia:
+		custom = d.AmneziaPath
+	}
+	if len(done) == 0 {
+		if custom != "" && isExec(custom) {
+			return "", fmt.Errorf("используется свой бинарник %s — панель его не удаляет; уберите путь в настройках ниже", custom)
+		}
+		return "", errors.New("нечего удалять: ядро не установлено")
+	}
+	return strings.Join(done, ", "), nil
+}

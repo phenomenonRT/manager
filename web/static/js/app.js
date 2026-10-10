@@ -25,6 +25,7 @@ async function showLogin(force) {
   const m = await import('./pages/login.js');
   m.login(app, S.session, boot, !!force);
 }
+window.addEventListener('cp-fixed', (e) => toast('Исправлены ссылки на удалённые узлы: ' + e.detail.join('; ') + '. Сохраните настройки.', 'ok', 12000));
 let recheck = false;
 // 401 может прийти не из-за сессии (например, от ядра) — сначала уточняем у панели.
 setAuthHandler(async () => {
@@ -48,13 +49,13 @@ async function boot() {
     return;
   }
   if (!S.session.authenticated) return showLogin();
-  if (S.session.must_change) return showLogin(true);
   try { await Promise.all([st.loadSystem(), st.loadSettings(), st.loadStatus().catch(() => {})]); }
   catch (e) {
     if (e.status === 401) return;
     clear(app).append(h('div', { class: 'login' }, note('err', 'Не удалось загрузить настройки: ' + e.message), h('button', { class: 'btn', onclick: boot }, 'Повторить')));
     return;
   }
+  st.pruneRefs(); // чинит ссылки на удалённые узлы в уже сохранённых настройках
   startApp();
 }
 

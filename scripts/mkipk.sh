@@ -19,7 +19,7 @@ mk() { # вариант архитектура бинарник
 [ -n "${IPKG_INSTROOT:-}" ] && exit 0
 /etc/init.d/corepanel enable
 /etc/init.d/corepanel start 2>/dev/null
-echo "corepanel запущен: http://<адрес-роутера>:8088 (admin; пароль — logread | grep admin, либо: corepanel passwd)"
+echo "corepanel запущен: http://<адрес-роутера>:8088 (вход без пароля из локальной сети; включить пароль root — раздел «Система»)"
 exit 0
 EOS
     cat > "$w/control/prerm" <<'EOS'
@@ -35,7 +35,7 @@ EOS
     cat > "$w/control/postinst" <<'EOS'
 #!/bin/sh
 /opt/etc/init.d/S99corepanel restart
-echo "corepanel запущен: http://<адрес-роутера>:8088 (admin; пароль — в /opt/var/log/corepanel.log, либо: corepanel passwd)"
+echo "corepanel запущен: http://<адрес-роутера>:8088 (вход без пароля из локальной сети; включить пароль root — раздел «Система»)"
 exit 0
 EOS
     cat > "$w/control/prerm" <<'EOS'

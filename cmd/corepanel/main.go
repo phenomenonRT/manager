@@ -25,7 +25,7 @@ const usage = `corepanel %s — панель sing-box / Mihomo для OpenWrt и
 
 Использование:
   corepanel [run] [-listen host:port]   запустить панель (по умолчанию)
-  corepanel passwd [пароль]             сбросить пароль администратора
+  corepanel auth off                    выключить вход (если забыли пароль root)
   corepanel version
 
 Переменные окружения: COREPANEL_DIR, COREPANEL_BIN_DIR, COREPANEL_PLATFORM (openwrt|keenetic|linux)
@@ -40,21 +40,21 @@ func main() {
 	switch cmd {
 	case "run":
 		run(args)
-	case "passwd":
-		pw := ""
-		if len(args) > 0 {
-			pw = args[0]
-		} else {
-			pw = store.RandomToken(6)
-			fmt.Println("Новый пароль:", pw)
+	case "auth":
+		if len(args) != 1 || args[0] != "off" {
+			fatal(errors.New("использование: corepanel auth off"))
 		}
-		if len(pw) < 6 {
-			fatal(errors.New("пароль должен быть не короче 6 символов"))
-		}
-		if err := store.ResetPassword(platform.Detect().DataDir, pw); err != nil {
+		st, err := store.Open(platform.Detect().DataDir)
+		if err != nil {
 			fatal(err)
 		}
-		fmt.Println("Пароль администратора (admin) изменён.")
+		if _, err := st.Panel(":8088"); err != nil {
+			fatal(err)
+		}
+		if err := st.SetAuth(false); err != nil {
+			fatal(err)
+		}
+		fmt.Println("Вход в панель выключен (перезапуск не нужен).")
 	case "version", "-v", "--version":
 		fmt.Println(version)
 	default:
@@ -78,12 +78,9 @@ func run(args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	pnl, pw, err := st.Panel(":8088")
+	pnl, err := st.Panel(":8088")
 	if err != nil {
 		fatal(err)
-	}
-	if pw != "" {
-		fmt.Printf("Первый запуск. Вход: admin / %s (пароль потребуется сменить)\n", pw)
 	}
 	if *listen != "" {
 		pnl.Listen = *listen

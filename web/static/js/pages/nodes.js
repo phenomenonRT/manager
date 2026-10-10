@@ -42,7 +42,7 @@ export default async function (root) {
     if (!(await confirmBox(msg))) return;
     for (const g of s.groups) g.members = g.members.filter((m) => m !== n.name);
     for (const x of s.nodes) if (x.detour === n.name) x.detour = '';
-    s.nodes.splice(i, 1); st.touch(); redraw();
+    s.nodes.splice(i, 1); st.pruneRefs(); st.touch(); redraw();
   }
   function redraw() { drawTable(); drawVpn(); }
 

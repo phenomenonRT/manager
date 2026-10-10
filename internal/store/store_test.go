@@ -50,39 +50,19 @@ func TestGetReturnsCopy(t *testing.T) {
 	}
 }
 
-func TestPasswordFlow(t *testing.T) {
+func TestAuthSwitch(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := Open(dir)
-	p, pw, err := st.Panel(":8088")
-	if err != nil || pw == "" || !p.MustChange {
-		t.Fatalf("первый запуск: %+v %q %v", p, pw, err)
+	p, err := st.Panel(":8088")
+	if err != nil || p.AuthEnabled || p.Epoch == "" {
+		t.Fatalf("первый запуск: вход должен быть выключен: %+v %v", p, err)
 	}
-	if !st.CheckLogin("admin", pw) {
-		t.Fatal("начальный пароль не подходит")
-	}
-	if st.CheckLogin("admin", "wrong") || st.CheckLogin("root", pw) {
-		t.Fatal("чужие данные приняты")
-	}
-	if _, pw2, _ := st.Panel(":8088"); pw2 != "" {
-		t.Error("пароль не должен показываться повторно")
-	}
-	if err := st.SetPassword("новый-пароль-123"); err != nil {
+	if err := st.SetAuth(true); err != nil {
 		t.Fatal(err)
 	}
 	st2, _ := Open(dir)
-	st2.Panel(":8088")
-	if !st2.CheckLogin("admin", "новый-пароль-123") || st2.CheckLogin("admin", pw) {
-		t.Error("смена пароля не сработала")
-	}
-	if st2.PanelInfo().MustChange {
-		t.Error("флаг must_change должен сняться")
-	}
-	if err := ResetPassword(dir, "reset-1"); err != nil {
-		t.Fatal(err)
-	}
-	st3, _ := Open(dir)
-	st3.Panel(":8088")
-	if !st3.CheckLogin("admin", "reset-1") {
-		t.Error("ResetPassword не сработал")
+	p2, _ := st2.Panel(":8088")
+	if !p2.AuthEnabled || p2.Epoch == p.Epoch {
+		t.Errorf("включение входа не сохранилось или не сменило epoch: %+v", p2)
 	}
 }

@@ -46,7 +46,7 @@ export default async function (root) {
         h('button', { class: 'btn sm', 'aria-label': 'Ниже', disabled: i === s.groups.length - 1, onclick: () => { [s.groups[i + 1], s.groups[i]] = [s.groups[i], s.groups[i + 1]]; st.touch(); draw(); } }, '↓'),
         h('button', { class: 'btn sm danger', onclick: async () => {
           if (!(await confirmBox('Удалить группу «' + g.name + '»?'))) return;
-          s.groups.splice(i, 1); for (const x of s.groups) x.members = x.members.filter((m) => m !== g.name);
+          s.groups.splice(i, 1); for (const x of s.groups) x.members = x.members.filter((m) => m !== g.name); st.pruneRefs();
           st.touch(); draw();
         } }, 'Удалить')),
       h('p', { class: 'small mute' }, TYPE_HELP[g.type] || ''),

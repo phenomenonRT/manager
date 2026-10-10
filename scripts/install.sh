@@ -83,5 +83,3 @@ fi
 sleep 2
 echo
 echo "Готово. Панель: http://<адрес-роутера>:8088"
-echo "Пароль первого входа: $( [ "$PLAT" = openwrt ] && logread 2>/dev/null | grep -o 'admin / [a-f0-9]*' | tail -1 || grep -o 'admin / [a-f0-9]*' /opt/var/log/corepanel.log 2>/dev/null | tail -1 )"
-echo "Если пароль не виден: corepanel passwd"

@@ -204,3 +204,22 @@ func TestWriteRawRejectsHTML(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRemove(t *testing.T) {
+	dir := t.TempDir()
+	in := New(platform.Info{OS: "linux", Arch: "amd64", BinDir: dir})
+	d := model.Download{}
+	if _, err := in.Remove(context.Background(), model.CoreMihomo, d); err == nil {
+		t.Fatal("удаление несуществующего ядра должно давать ошибку")
+	}
+	for _, n := range []string{"mihomo", "mihomo.new"} {
+		os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o755)
+	}
+	what, err := in.Remove(context.Background(), model.CoreMihomo, d)
+	if err != nil || !strings.Contains(what, "mihomo") {
+		t.Fatalf("%q %v", what, err)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "mihomo*")); len(m) != 0 {
+		t.Fatalf("остались файлы: %v", m)
+	}
+}

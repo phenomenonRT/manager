@@ -13,7 +13,7 @@
 - **Сеть:** входящие mixed/redirect/tproxy, TUN (stack, auto_route, auto_redirect, strict_route), прозрачный прокси через **nft** или **iptables** для выбранных LAN-интерфейсов с include/exclude клиентов, перехват DNS; просмотр генерируемых скриптов.
 - **Расширенные добавки:** любые поля ядра через глубокое слияние JSON (`override_singbox` / `override_mihomo`).
 - **Мониторинг:** статус, трафик, подключения, выбор узла и проверка задержки (через Clash API), живые логи.
-- Безопасность: пароль (PBKDF2), смена при первом входе, HttpOnly/SameSite cookie, защита от CSRF, ограничение перебора.
+- Безопасность: по умолчанию панель открывается **без пароля, но только из локальной сети** (запросы с публичных адресов отклоняются). Вход включается в разделе «Система»: пароль — тот же, что у root для SSH (проверяется по shadow; md5/sha256/sha512-crypt). HttpOnly/SameSite cookie, защита от CSRF, ограничение перебора. Забыли пароль — по SSH: `corepanel auth off`.
 
 ## Установка
 
@@ -58,7 +58,7 @@ Podkop и ядро панели — альтернативы: оба управ�
 
 ```
 corepanel [run] [-listen host:port]
-corepanel passwd [пароль]
+corepanel auth off
 corepanel version
 ```
 

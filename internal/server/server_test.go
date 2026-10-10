@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -11,9 +12,10 @@ import (
 	"corepanel/internal/platform"
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
+	"corepanel/internal/sysauth"
 )
 
-func newTest(t *testing.T) (*httptest.Server, string) {
+func newTest(t *testing.T) (*httptest.Server, string) { // второй результат оставлен для совместимости вызовов
 	t.Helper()
 	dir := t.TempDir()
 	info := platform.Info{OS: "linux", DataDir: dir, BinDir: dir + "/bin"}
@@ -21,12 +23,12 @@ func newTest(t *testing.T) (*httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, pw, _ := st.Panel(":0")
+	st.Panel(":0")
 	inst := installer.New(info)
 	srv := New("test", info, st, supervisor.New(info, inst, st.Get), inst)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return ts, pw
+	return ts, ""
 }
 
 func do(t *testing.T, c *http.Client, method, url, body string) (*http.Response, string) {
@@ -51,18 +53,13 @@ func do(t *testing.T, c *http.Client, method, url, body string) (*http.Response,
 }
 
 func TestAuthAndSettings(t *testing.T) {
-	ts, pw := newTest(t)
+	ts, _ := newTest(t)
 	jar, _ := cookiejarNew()
 	c := &http.Client{Jar: jar}
 
-	if r, _ := do(t, c, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 401 {
-		t.Fatalf("без входа ожидался 401, получен %d", r.StatusCode)
-	}
-	if r, _ := do(t, c, "POST", ts.URL+"/api/login", `{"username":"admin","password":"bad"}`); r.StatusCode != 401 {
-		t.Fatalf("неверный пароль: %d", r.StatusCode)
-	}
-	if r, _ := do(t, c, "POST", ts.URL+"/api/login", `{"username":"admin","password":"`+pw+`"}`); r.StatusCode != 200 {
-		t.Fatalf("вход: %d", r.StatusCode)
+	// по умолчанию вход выключен
+	if r, _ := do(t, c, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 200 {
+		t.Fatalf("при выключенном входе ожидался 200, получен %d", r.StatusCode)
 	}
 	// мутации без заголовка запрещены
 	req, _ := http.NewRequest("PUT", ts.URL+"/api/settings", strings.NewReader("{}"))
@@ -109,19 +106,20 @@ func TestStatic(t *testing.T) {
 func TestSessionSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	info := platform.Info{OS: "linux", DataDir: dir, BinDir: dir + "/bin"}
+	shadowWithTest(t)
 	mk := func() (*httptest.Server, string) {
 		st, _ := store.Open(dir)
-		_, pw, _ := st.Panel(":0")
+		st.Panel(":0")
 		inst := installer.New(info)
 		ts := httptest.NewServer(New("t", info, st, supervisor.New(info, inst, st.Get), inst).Handler())
 		t.Cleanup(ts.Close)
-		return ts, pw
+		return ts, ""
 	}
-	ts1, pw := mk()
+	ts1, _ := mk()
 	jar, _ := cookiejarNew()
 	c := &http.Client{Jar: jar}
-	if r, _ := do(t, c, "POST", ts1.URL+"/api/login", `{"username":"admin","password":"`+pw+`"}`); r.StatusCode != 200 {
-		t.Fatal("вход")
+	if r, _ := do(t, c, "POST", ts1.URL+"/api/auth", `{"enabled":true,"password":"test"}`); r.StatusCode != 200 {
+		t.Fatal("включение входа")
 	}
 	cookies := jar.Cookies(mustURL(ts1.URL))
 	ts2, _ := mk() // «перезапуск»
@@ -133,10 +131,9 @@ func TestSessionSurvivesRestart(t *testing.T) {
 }
 
 func TestPodkopStatusAndGuard(t *testing.T) {
-	ts, pw := newTest(t)
+	ts, _ := newTest(t)
 	jar, _ := cookiejarNew()
 	c := &http.Client{Jar: jar}
-	do(t, c, "POST", ts.URL+"/api/login", `{"username":"admin","password":"`+pw+`"}`)
 	r, out := do(t, c, "GET", ts.URL+"/api/podkop", "")
 	if r.StatusCode != 200 || !strings.Contains(out, `"supported":false`) {
 		t.Fatalf("не-OpenWrt должен возвращать supported=false: %d %s", r.StatusCode, out)
@@ -146,5 +143,65 @@ func TestPodkopStatusAndGuard(t *testing.T) {
 	}
 	if r, _ := do(t, c, "POST", ts.URL+"/api/podkop/bogus", "{}"); r.StatusCode != 400 {
 		t.Fatalf("неизвестное действие: %d", r.StatusCode)
+	}
+}
+
+// shadowWithTest подменяет shadow: пароль root — «test» (md5-crypt).
+func shadowWithTest(t *testing.T) {
+	t.Helper()
+	f := t.TempDir() + "/shadow"
+	if err := os.WriteFile(f, []byte("root:$1$abcdefgh$irWbblnpmw.5z7wgBnprh0:19000:0:99999:7:::\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := sysauth.ShadowFiles
+	sysauth.ShadowFiles = []string{f}
+	t.Cleanup(func() { sysauth.ShadowFiles = old })
+}
+
+func TestRootPasswordAuth(t *testing.T) {
+	shadowWithTest(t)
+	ts, _ := newTest(t)
+	jar, _ := cookiejarNew()
+	c := &http.Client{Jar: jar}
+	if r, _ := do(t, c, "POST", ts.URL+"/api/auth", `{"enabled":true,"password":"bad"}`); r.StatusCode != 400 {
+		t.Fatalf("включение с неверным паролем должно отказывать: %d", r.StatusCode)
+	}
+	if r, _ := do(t, c, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 200 {
+		t.Fatal("после неудачного включения вход должен остаться выключенным")
+	}
+	if r, _ := do(t, c, "POST", ts.URL+"/api/auth", `{"enabled":true,"password":"test"}`); r.StatusCode != 200 {
+		t.Fatalf("включение: %d", r.StatusCode)
+	}
+	if r, _ := do(t, c, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 200 {
+		t.Fatal("текущий браузер должен остаться в системе")
+	}
+	other := &http.Client{}
+	if r, _ := do(t, other, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 401 {
+		t.Fatalf("без входа ожидался 401: %d", r.StatusCode)
+	}
+	if r, _ := do(t, other, "POST", ts.URL+"/api/login", `{"username":"root","password":"bad"}`); r.StatusCode != 401 {
+		t.Fatalf("неверный пароль: %d", r.StatusCode)
+	}
+	jar2, _ := cookiejarNew()
+	c2 := &http.Client{Jar: jar2}
+	if r, _ := do(t, c2, "POST", ts.URL+"/api/login", `{"username":"root","password":"test"}`); r.StatusCode != 200 {
+		t.Fatalf("вход по паролю root: %d", r.StatusCode)
+	}
+	if r, _ := do(t, c2, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 200 {
+		t.Fatal("после входа настройки должны открываться")
+	}
+	if r, _ := do(t, c2, "POST", ts.URL+"/api/auth", `{"enabled":false}`); r.StatusCode != 200 {
+		t.Fatal("выключение")
+	}
+	if r, _ := do(t, other, "GET", ts.URL+"/api/settings", ""); r.StatusCode != 200 {
+		t.Fatal("после выключения вход не нужен")
+	}
+}
+
+func TestLocalOnlyWhenOpen(t *testing.T) {
+	for ip, want := range map[string]bool{"192.168.1.5": true, "10.0.0.1": true, "127.0.0.1": true, "fe80::1": true, "fd00::1": true, "8.8.8.8": false, "2001:db8::1": false} {
+		if isLocalAddr(ip) != want {
+			t.Errorf("%s: ожидалось %v", ip, want)
+		}
 	}
 }

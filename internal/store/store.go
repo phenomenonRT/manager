@@ -2,11 +2,7 @@
 package store
 
 import (
-	"crypto/pbkdf2"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,16 +22,12 @@ type Store struct {
 }
 
 // Panel — параметры самой панели (не ядра).
+// Вход по умолчанию выключен; если включён, проверяется пароль root (как для SSH).
 type Panel struct {
-	Listen     string `json:"listen"`
-	Username   string `json:"username"`
-	Salt       string `json:"salt"`
-	Hash       string `json:"hash"`
-	Iter       int    `json:"iter"`
-	MustChange bool   `json:"must_change"`
+	Listen      string `json:"listen"`
+	AuthEnabled bool   `json:"auth_enabled"`
+	Epoch       string `json:"epoch"` // меняется при включении/выключении входа и обнуляет все сессии
 }
-
-const pbkdfIter = 60000
 
 // Open читает настройки из каталога dir (создаёт при отсутствии).
 func Open(dir string) (*Store, error) {
@@ -112,22 +104,22 @@ func writeFile(path string, b []byte) error {
 
 // ---------- учётные данные панели ----------
 
-// Panel возвращает параметры панели; при первом запуске создаёт учётную запись
-// admin со случайным паролем и возвращает этот пароль (только в этот раз).
-func (st *Store) Panel(defaultListen string) (p Panel, initialPassword string, err error) {
+// Panel возвращает параметры панели; при первом запуске создаёт их (вход выключен).
+func (st *Store) Panel(defaultListen string) (Panel, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if st.pnl != nil {
-		return *st.pnl, "", nil
+	if st.pnl != nil && st.pnl.Epoch != "" {
+		return *st.pnl, nil
 	}
-	pw := RandomToken(9)
-	np := Panel{Listen: defaultListen, Username: "admin", MustChange: true}
-	setPassword(&np, pw)
+	np := Panel{Listen: defaultListen, Epoch: RandomToken(8)}
+	if st.pnl != nil { // panel.json от старой версии: сохраняем адрес, вход выключен
+		np.Listen = st.pnl.Listen
+	}
 	if err := st.savePanelLocked(&np); err != nil {
-		return Panel{}, "", err
+		return Panel{}, err
 	}
 	st.pnl = &np
-	return np, pw, nil
+	return np, nil
 }
 
 func (st *Store) savePanelLocked(p *Panel) error {
@@ -135,16 +127,16 @@ func (st *Store) savePanelLocked(p *Panel) error {
 	return writeFile(filepath.Join(st.dir, "panel.json"), b)
 }
 
-// SetPassword меняет пароль.
-func (st *Store) SetPassword(pw string) error {
+// SetAuth включает или выключает вход по паролю root. Смена состояния завершает все сессии.
+func (st *Store) SetAuth(enabled bool) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.pnl == nil {
 		return errors.New("панель не инициализирована")
 	}
 	np := *st.pnl
-	setPassword(&np, pw)
-	np.MustChange = false
+	np.AuthEnabled = enabled
+	np.Epoch = RandomToken(8)
 	if err := st.savePanelLocked(&np); err != nil {
 		return err
 	}
@@ -176,51 +168,6 @@ func (st *Store) PanelInfo() Panel {
 		return Panel{}
 	}
 	return *st.pnl
-}
-
-// CheckLogin проверяет логин и пароль за постоянное время.
-func (st *Store) CheckLogin(user, pw string) bool {
-	st.mu.RLock()
-	p := st.pnl
-	st.mu.RUnlock()
-	if p == nil {
-		return false
-	}
-	salt, err := base64.StdEncoding.DecodeString(p.Salt)
-	if err != nil {
-		return false
-	}
-	got, err := pbkdf2.Key(sha256.New, pw, salt, p.Iter, 32)
-	if err != nil {
-		return false
-	}
-	want, _ := hex.DecodeString(p.Hash)
-	userOK := subtle.ConstantTimeCompare([]byte(user), []byte(p.Username))
-	passOK := subtle.ConstantTimeCompare(got, want)
-	return userOK&passOK == 1
-}
-
-// ResetPassword задаёт новый пароль прямо на диске (для команды `corepanel passwd`).
-func ResetPassword(dir, pw string) error {
-	st, err := Open(dir)
-	if err != nil {
-		return err
-	}
-	if st.pnl == nil {
-		if _, _, err := st.Panel(":8088"); err != nil {
-			return err
-		}
-	}
-	return st.SetPassword(pw)
-}
-
-func setPassword(p *Panel, pw string) {
-	salt := make([]byte, 16)
-	_, _ = rand.Read(salt)
-	key, _ := pbkdf2.Key(sha256.New, pw, salt, pbkdfIter, 32)
-	p.Salt = base64.StdEncoding.EncodeToString(salt)
-	p.Hash = hex.EncodeToString(key)
-	p.Iter = pbkdfIter
 }
 
 // RandomToken возвращает случайную строку из n байт (hex-кодирование).

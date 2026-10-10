@@ -54,6 +54,7 @@ export const hasErrors = () => S.issues.some((i) => i.level === 'error');
 export async function save(apply) {
   S.busy = true; emit();
   try {
+    pruneRefs();
     await validate();
     const r = await put('api/settings', S.settings);
     if (r && r.issues && r.issues.length) S.issues = r.issues;
@@ -96,6 +97,25 @@ export function renameRef(oldN, newN) {
   if (s.final === oldN) s.final = newN;
   if (s.general.update_via === oldN) s.general.update_via = newN;
   if (s.dns.remote_detour === oldN) s.dns.remote_detour = newN;
+}
+// Убирает ссылки на несуществующие узлы и группы (после удаления или замены узлов).
+// Битые ссылки заменяются на direct, группы теряют лишних участников. Возвращает список правок.
+export function pruneRefs() {
+  const s = S.settings, out = [];
+  const have = new Set(['direct', 'block']);
+  for (const n of s.nodes) have.add(n.name);
+  for (const g of s.groups) have.add(g.name);
+  for (const g of s.groups) {
+    const keep = g.members.filter((m) => have.has(m));
+    if (keep.length !== g.members.length) { out.push('группа «' + g.name + '»: убраны несуществующие участники'); g.members = keep; }
+  }
+  for (const n of s.nodes) if (n.detour && !have.has(n.detour)) { out.push('узел «' + n.name + '»: сброшена цепочка'); n.detour = ''; }
+  if (!have.has(s.final)) { out.push('исходящий по умолчанию «' + s.final + '» → direct'); s.final = 'direct'; }
+  s.rules.forEach((r, i) => { if (r.outbound && !have.has(r.outbound)) { out.push('правило №' + (i + 1) + ': «' + r.outbound + '» → direct'); r.outbound = 'direct'; } });
+  if (s.general.update_via && !have.has(s.general.update_via)) { out.push('загрузка наборов правил: сброшен прокси'); s.general.update_via = ''; }
+  if (s.dns.remote_detour && !have.has(s.dns.remote_detour)) { out.push('DNS remote: сброшен «Remote через»'); s.dns.remote_detour = ''; }
+  if (out.length) window.dispatchEvent(new CustomEvent('cp-fixed', { detail: out }));
+  return out;
 }
 export function uniqueName(name, taken) {
   if (!taken.has(name)) return name;
