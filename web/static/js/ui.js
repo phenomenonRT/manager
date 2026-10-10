@@ -51,7 +51,8 @@ export function fmtDur(sec) {
 // ---- тосты ----
 export function toast(msg, kind = '', ms = 4200) {
   const box = document.getElementById('toasts');
-  const t = h('div', { class: 'toast ' + kind, role: kind === 'err' ? 'alert' : 'status' }, msg);
+  const t = h('div', { class: 'toast ' + kind, role: kind === 'err' ? 'alert' : 'status' }, h('span', { class: 'tmsg' }, msg),
+    h('button', { type: 'button', class: 'xbtn', 'aria-label': 'Закрыть', onclick: () => t.remove() }, '×'));
   box.append(t);
   setTimeout(() => t.remove(), kind === 'err' ? Math.max(ms, 25000) : ms); // ошибки висят 25 с
 }
@@ -151,6 +152,17 @@ export function chk(obj, key, label, tip, o = {}) {
   return h('label', { class: 'check' },
     h('input', { type: 'checkbox', checked: !!obj[key], onchange: (e) => { obj[key] = e.target.checked; fire(o); } }),
     h('span', label, tip ? help(tip) : null));
+}
+// Ошибка с крестиком: закрытая ошибка не показывается снова, пока её текст не изменится.
+const dismissed = new Set();
+export function errNote(...c) {
+  const el = h('div', { class: 'note err closable', role: 'alert' });
+  const body = h('div', { class: 'nbody' }, c);
+  el.append(body);
+  const key = body.textContent;
+  if (dismissed.has(key)) el.hidden = true;
+  el.append(h('button', { type: 'button', class: 'xbtn', 'aria-label': 'Закрыть', onclick: () => { dismissed.add(key); el.hidden = true; } }, '×'));
+  return el;
 }
 export const note = (kind, ...c) => h('div', { class: 'note ' + kind, role: kind === 'err' ? 'alert' : null }, c);
 export const badge = (text, kind = '') => h('span', { class: 'badge ' + kind }, text);

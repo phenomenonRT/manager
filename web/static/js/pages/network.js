@@ -64,7 +64,7 @@ export default async function (root) {
         field('Стек', sel(tun, 'stack', [['system', 'system — быстрее'], ['gvisor', 'gvisor — совместимее'], ['mixed', 'mixed — по умолчанию']]), 'system использует сетевой стек ОС, gvisor — собственный в пространстве пользователя (медленнее, но реже даёт проблемы). mixed: TCP через system, UDP через gvisor.')),
       fgrid(chk(tun, 'auto_route', 'auto_route', 'Ядро само настраивает маршруты, чтобы трафик шёл в TUN.'),
         chk(tun, 'strict_route', 'strict_route', 'Строгая маршрутизация: предотвращает утечки мимо TUN. Может мешать другим VPN.'),
-        chk(tun, 'auto_redirect', 'auto_redirect (sing-box)', 'Использует nftables для перенаправления TCP — быстрее и экономнее по CPU. Нужен Linux с nftables.'),
+        chk(tun, 'auto_redirect', 'auto_redirect (sing-box)', 'Использует nftables для перенаправления TCP — быстрее и экономнее по CPU. Нужны nftables и модуль kmod-nft-queue; если ядро падает с ошибкой nfqueue — отключите.'),
         chk(tun, 'dns_hijack', 'Перехват DNS', 'Все DNS-запросы, попавшие в TUN, обрабатываются DNS ядра.')),
       field('Исключить подсети', lines(tun, 'exclude_cidr', { ph: '192.168.0.0/16' }), 'Подсети, которые не нужно направлять в TUN (по одной в строке).')),
     h('div', { class: 'card' }, h('h2', 'Прозрачный прокси (брандмауэр)'),
@@ -98,7 +98,8 @@ export default async function (root) {
     const opt = root.querySelector('option[value="tproxy"]');
     if (opt) { opt.disabled = !k.tproxy && fw.mode !== 'tproxy'; opt.textContent = 'tproxy — TCP+UDP' + (k.tproxy ? '' : ' (нужен kmod-nft-tproxy)'); }
     clear(kmBox);
-    const miss = [!k.tun ? 'kmod-tun (для TUN)' : null, !k.tproxy ? 'kmod-nft-tproxy (для tproxy)' : null].filter(Boolean);
+    const needQ = !k.queue && tun.enabled && tun.auto_redirect;
+    const miss = [!k.tun ? 'kmod-tun (для TUN)' : null, !k.tproxy ? 'kmod-nft-tproxy (для tproxy)' : null, needQ ? 'kmod-nft-queue (для auto_redirect)' : null].filter(Boolean);
     if (!miss.length) return;
     const j = k.job || {};
     const btn = k.installable ? h('button', { class: 'btn primary', disabled: !!j.running, onclick: async () => {
@@ -106,7 +107,7 @@ export default async function (root) {
     } }, j.running ? 'Устанавливаю…' : 'Установить') : null;
     kmBox.append(h('div', { class: 'need' },
       h('div', { class: 'need-t' }, h('b', 'Нужно установить модули ядра: '), miss.join(', ')),
-      h('p', { class: 'small' }, 'Без них недоступны ' + (!k.tun && !k.tproxy ? 'режимы TUN и tproxy' : !k.tun ? 'режим TUN' : 'режим tproxy') + ' — они затемнены. Режим redirect работает без модулей. Команда: ', h('code', k.command)),
+      h('p', { class: 'small' }, 'Без них недоступны не все режимы: TUN и tproxy затемнены, auto_redirect без kmod-nft-queue не запустится. Режим redirect работает без модулей. Команда: ', h('code', k.command)),
       k.installable ? null : h('p', { class: 'small' }, 'Автоматическая установка доступна только на OpenWrt с opkg или apk. На Keenetic модули зависят от прошивки.'),
       btn,
       j.error ? note('err', j.error) : null,

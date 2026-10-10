@@ -1,4 +1,4 @@
-import { apd, h, clear, pageHead, badge, note, fmtBytes, fmtDur, toast, toastErr, spinner } from '../ui.js';
+import { errNote, apd, h, clear, pageHead, badge, note, fmtBytes, fmtDur, toast, toastErr, spinner } from '../ui.js';
 import { get, post, put, streamJSON } from '../api.js';
 import * as st from '../state.js';
 import { transparentNote } from '../transparent.js';
@@ -39,8 +39,8 @@ export default async function (root) {
         h('dt', 'Аптайм'), h('dd', run && s.uptime_sec ? fmtDur(s.uptime_sec) : '—'),
         h('dt', 'Версия'), h('dd', s.version || '—'),
         h('dt', 'Перезапусков'), h('dd', String(s.restarts || 0))),
-      s.error ? note('err', h('b', 'Ошибка ядра: '), s.error) : null,
-      s.firewall_error ? note('err', h('b', 'Ошибка брандмауэра: '), s.firewall_error) : null,
+      s.error ? errNote(h('b', 'Ошибка ядра: '), s.error) : null,
+      s.firewall_error ? errNote(h('b', 'Ошибка брандмауэра: '), s.firewall_error) : null,
       (s.warnings && s.warnings.length) ? note('warn', h('b', 'Предупреждения генератора:'), h('ul', s.warnings.map((w) => h('li', w)))) : null,
       h('div', { class: 'row' }, run ? mk('restart', 'Перезапустить', 'primary') : mk('start', 'Запустить', 'primary'), run ? mk('stop', 'Остановить') : null));
   }

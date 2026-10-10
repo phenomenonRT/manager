@@ -226,7 +226,7 @@ func Default() *Settings {
 		},
 		Inbounds: Inbounds{MixedPort: 7890, RedirPort: 7892, TProxyPort: 7893},
 		Tun: Tun{Name: "tun0", Address: "172.19.0.1/30", MTU: 1500, Stack: "mixed",
-			AutoRoute: true, AutoRedirect: true, DNSHijack: true},
+			AutoRoute: true, AutoRedirect: false, DNSHijack: true},
 		DNS: DNS{Enabled: true, Listen: "127.0.0.1:1053", Mode: "normal",
 			Remote: "https://1.1.1.1/dns-query", Local: "77.88.8.8", Bootstrap: "77.88.8.8",
 			FakeIPRange: "198.18.0.0/15", Final: "remote"},

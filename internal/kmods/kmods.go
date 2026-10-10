@@ -15,7 +15,7 @@ import (
 )
 
 // Packages — пакеты ядерных модулей.
-var Packages = []string{"kmod-tun", "kmod-nft-tproxy"}
+var Packages = []string{"kmod-tun", "kmod-nft-tproxy", "kmod-nft-queue"}
 
 // Job — состояние установки.
 type Job struct {
@@ -31,6 +31,7 @@ type Status struct {
 	Manager     string `json:"manager,omitempty"`
 	TUN         bool   `json:"tun"`
 	TProxy      bool   `json:"tproxy"`
+	Queue       bool   `json:"queue"` // nfqueue: нужен для auto_redirect в TUN
 	Command     string `json:"command"`
 	Job         Job    `json:"job"`
 }
@@ -105,6 +106,7 @@ func (m *Manager) Check() Status {
 	st.Installable = m.Info.OS == platform.OpenWrt && mgr != ""
 	st.TUN = tunOpens() || moduleLoaded("tun")
 	st.TProxy = moduleLoaded("nft_tproxy", "xt_TPROXY")
+	st.Queue = moduleLoaded("nfnetlink_queue", "nft_queue")
 	if mgr == "apk" {
 		st.Command = "apk update && apk add " + strings.Join(Packages, " ")
 	} else {
@@ -173,7 +175,7 @@ func (m *Manager) run(mgr string) {
 		err = m.exec(ctx, "opkg", append([]string{"install"}, Packages...)...)
 	}
 	if err == nil {
-		for _, mod := range []string{"tun", "nft_tproxy"} {
+		for _, mod := range []string{"tun", "nft_tproxy", "nfnetlink_queue", "nft_queue"} {
 			if p, e := exec.LookPath("modprobe"); e == nil {
 				_ = m.exec(ctx, p, mod)
 			}

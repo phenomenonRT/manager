@@ -245,7 +245,7 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	select {
 	case <-done:
 		tail := strings.Join(s.Logs.Tail(6), "\n")
-		s.lastErr = "ядро завершилось сразу после запуска:\n" + tail
+		s.lastErr = "ядро завершилось сразу после запуска:\n" + tail + hintFor(tail)
 		s.desired = false
 		return errors.New(s.lastErr)
 	case <-time.After(1500 * time.Millisecond):
