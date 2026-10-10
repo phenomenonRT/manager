@@ -4,6 +4,7 @@ package supervisor
 import (
 	"bufio"
 	"context"
+	"corepanel/internal/kmods"
 	"errors"
 	"fmt"
 	"io"
@@ -132,8 +133,21 @@ func Render(set *model.Settings) (*gen.Result, error) {
 	if set.Core == model.CoreMihomo {
 		return gen.Mihomo(set)
 	}
-	return gen.Singbox(set)
+	note := ""
+	if set.Tun.Enabled && set.Tun.AutoRedirect && !queueAvailable() {
+		cp := *set
+		cp.Tun.AutoRedirect = false
+		set = &cp
+		note = "auto_redirect отключён автоматически: в ядре нет модуля nfqueue (установите kmod-nft-queue, чтобы использовать его)"
+	}
+	res, err := gen.Singbox(set)
+	if err == nil && note != "" {
+		res.Warnings = append(res.Warnings, note)
+	}
+	return res, err
 }
+
+var queueAvailable = kmods.QueueAvailable
 
 func hasError(is []model.Issue) bool {
 	for _, i := range is {

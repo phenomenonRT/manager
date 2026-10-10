@@ -78,6 +78,9 @@ func moduleLoaded(names ...string) bool {
 	return false
 }
 
+// QueueAvailable — загружен ли модуль nfqueue (нужен для auto_redirect).
+func QueueAvailable() bool { return moduleLoaded("nfnetlink_queue", "nft_queue") }
+
 func tunOpens() bool {
 	f, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0)
 	if err != nil {
