@@ -26,8 +26,6 @@ import (
 
 const (
 	initScript = "/etc/init.d/podkop"
-	scriptURL  = "https://raw.githubusercontent.com/itdoginfo/podkop/refs/heads/main/install.sh"
-	mirrorURL  = "https://mirror.podkop.net/urjw/scripts/bootstrap.sh"
 
 	// Рекомендации из документации Podkop (МБ свободного места).
 	minFreeMB          = 20
@@ -36,12 +34,6 @@ const (
 
 // latestURL — последний релиз Podkop (переопределяется в тестах).
 var latestURL = "https://api.github.com/repos/itdoginfo/podkop/releases/latest"
-
-// Команды в виде, пригодном для копирования в SSH.
-var (
-	InstallCmd = "wget -O /tmp/podkop-install.sh " + scriptURL + " && sh /tmp/podkop-install.sh"
-	MirrorCmd  = "wget -O - " + mirrorURL + " | sh"
-)
 
 // Manager выполняет операции с Podkop; одновременно идёт не более одной.
 type Manager struct {
@@ -76,8 +68,6 @@ type Status struct {
 	PkgManager string `json:"pkg_manager,omitempty"`
 	FreeMB     int    `json:"free_mb"`
 	NeedMB     int    `json:"need_mb"`
-	InstallCmd string `json:"install_cmd"`
-	MirrorCmd  string `json:"mirror_cmd"`
 	Job        Job    `json:"job"`
 }
 
@@ -163,7 +153,7 @@ func version(ctx context.Context, pm string) string {
 
 // Status собирает текущее состояние.
 func (m *Manager) Status(ctx context.Context) Status {
-	st := Status{InstallCmd: InstallCmd, MirrorCmd: MirrorCmd, FreeMB: freeMB(), NeedMB: needMB()}
+	st := Status{FreeMB: freeMB(), NeedMB: needMB()}
 	st.Supported, st.Reason = m.supported()
 	m.mu.Lock()
 	st.Job = Job{Title: m.title, Running: m.running, Finished: m.done, Error: m.err, Output: append([]string{}, m.lines...)}
@@ -236,7 +226,7 @@ func (m *Manager) finish(err error) {
 
 // Install запускает официальный установщик (при mirror=true — через зеркало podkop.net,
 // если GitHub недоступен). Ввод закрыт: установщик не должен ждать ответов.
-func (m *Manager) Install(mirror bool) error {
+func (m *Manager) Install() error {
 	if ok, why := m.supported(); !ok {
 		return errors.New(why)
 	}
@@ -246,9 +236,6 @@ func (m *Manager) Install(mirror bool) error {
 	need := needMB()
 	if f := freeMB(); f > 0 && f < need {
 		return fmt.Errorf("свободно %d МБ, для установки Podkop нужно не меньше %d МБ (sing-box ставится как зависимость). Освободите место или используйте extroot", f, need)
-	}
-	if mirror {
-		return m.exec("Установка Podkop (зеркало)", "wget -O - "+mirrorURL+" | sh", 15*time.Minute)
 	}
 	return m.installLatest()
 }
@@ -320,10 +307,10 @@ type ghAsset struct {
 }
 
 // pickAssets выбирает из релиза пакеты нужного формата (ext: ".ipk" или ".apk")
-// в порядке установки: podkop, luci-app-podkop, luci-i18n-podkop-ru.
+// нужен только основной пакет podkop (без luci-app и языковых пакетов).
 func pickAssets(assets []ghAsset, ext string) ([]ghAsset, error) {
 	var out []ghAsset
-	for _, pre := range []string{"podkop-", "luci-app-podkop-", "luci-i18n-podkop-ru-"} {
+	for _, pre := range []string{"podkop-"} {
 		found := false
 		for _, a := range assets {
 			if strings.HasPrefix(a.Name, pre) && strings.HasSuffix(a.Name, ext) {
@@ -331,7 +318,7 @@ func pickAssets(assets []ghAsset, ext string) ([]ghAsset, error) {
 				break
 			}
 		}
-		if !found && pre != "luci-i18n-podkop-ru-" {
+		if !found {
 			return nil, fmt.Errorf("в релизе нет пакета %s*%s", pre, ext)
 		}
 	}

@@ -1,4 +1,4 @@
-import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, chk, toast, toastErr, confirmBox, copy } from '../ui.js';
+import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, chk, toast, toastErr, confirmBox } from '../ui.js';
 import { get, post } from '../api.js';
 import * as st from '../state.js';
 
@@ -120,9 +120,6 @@ export default async function (root) {
     try { await post('api/podkop/' + name); toast('Готово', 'ok'); } catch (e) { toastErr(e); }
     pkLoad();
   }
-  const cmdRow = (title, cmd) => h('div', { style: 'margin:8px 0' }, h('div', { class: 'small mute' }, title),
-    h('div', { class: 'row' }, h('code', { class: 'mono grow', style: 'word-break:break-all' }, cmd),
-      h('button', { class: 'btn', onclick: () => copy(cmd).then(() => toast('Скопировано', 'ok')) }, 'Копировать')));
   async function pkLoad() {
     clearTimeout(pkT);
     let p;
@@ -149,11 +146,7 @@ export default async function (root) {
           h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('disable') }, 'Убрать из автозапуска'),
           h('button', { class: 'btn danger', disabled: busy, onclick: () => pkAct('remove', 'Остановить и удалить Podkop (пакеты podkop, luci-app-podkop, luci-i18n-podkop-ru)?') }, 'Удалить'))
         : h('div', { class: 'row install' + (lack ? ' lowspace' : ''), style: 'flex-wrap:wrap;gap:8px;margin-top:10px' },
-          h('button', { class: 'btn primary', disabled: busy || lack, onclick: () => pkAct('install', 'Скачать последний релиз Podkop с GitHub (itdoginfo/podkop) и установить пакеты podkop, luci-app-podkop и luci-i18n-podkop-ru? Зависимости (sing-box и др.) подтянутся из репозиториев роутера.') }, 'Установить'),
-          h('button', { class: 'btn', disabled: busy || lack, onclick: () => pkAct('install-mirror', 'Установить Podkop через зеркало mirror.podkop.net (если GitHub недоступен)?') }, 'Установить через зеркало')));
-      if (!p.installed) kids.push(h('details', { style: 'margin-top:10px' }, h('summary', { class: 'small' }, 'Установить вручную по SSH (если установщик задаёт вопросы)'),
-        cmdRow('С GitHub', p.install_cmd), cmdRow('Через зеркало', p.mirror_cmd),
-        h('p', { class: 'small mute' }, 'Требуется OpenWrt 24.10 или 25.12. Перед обновлением OpenWrt остановите Podkop.')));
+          h('button', { class: 'btn primary', disabled: busy || lack, onclick: () => pkAct('install', 'Скачать последний релиз Podkop с GitHub (itdoginfo/podkop) и установить пакет podkop? Зависимости (sing-box и др.) подтянутся из репозиториев роутера.') }, 'Установить')));
       if (p.job && (p.job.running || p.job.finished)) {
         const pre = h('pre', { class: 'mono', style: 'max-height:300px;overflow:auto;white-space:pre-wrap;margin-top:10px' }, (p.job.output || []).join('\n'));
         kids.push(h('div', { class: 'small', style: 'margin-top:10px' }, h('b', p.job.title || 'Операция')),

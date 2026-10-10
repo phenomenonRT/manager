@@ -743,9 +743,7 @@ func (s *Server) podkopAction(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch a := r.PathValue("action"); a {
 	case "install":
-		err = s.Podkop.Install(false)
-	case "install-mirror":
-		err = s.Podkop.Install(true)
+		err = s.Podkop.Install()
 	case "remove":
 		err = s.Podkop.Remove()
 	case "start", "restart":
