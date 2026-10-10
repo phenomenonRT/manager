@@ -149,7 +149,7 @@ export default async function (root) {
           h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('disable') }, 'Убрать из автозапуска'),
           h('button', { class: 'btn danger', disabled: busy, onclick: () => pkAct('remove', 'Остановить и удалить Podkop (пакеты podkop, luci-app-podkop, luci-i18n-podkop-ru)?') }, 'Удалить'))
         : h('div', { class: 'row install' + (lack ? ' lowspace' : ''), style: 'flex-wrap:wrap;gap:8px;margin-top:10px' },
-          h('button', { class: 'btn primary', disabled: busy || lack, onclick: () => pkAct('install', 'Скачать и запустить официальный установщик Podkop с GitHub (itdoginfo/podkop)? Он установит пакеты и зависимости (sing-box) и может удалить конфликтующие пакеты, например https-dns-proxy.') }, 'Установить'),
+          h('button', { class: 'btn primary', disabled: busy || lack, onclick: () => pkAct('install', 'Скачать последний релиз Podkop с GitHub (itdoginfo/podkop) и установить пакеты podkop, luci-app-podkop и luci-i18n-podkop-ru? Зависимости (sing-box и др.) подтянутся из репозиториев роутера.') }, 'Установить'),
           h('button', { class: 'btn', disabled: busy || lack, onclick: () => pkAct('install-mirror', 'Установить Podkop через зеркало mirror.podkop.net (если GitHub недоступен)?') }, 'Установить через зеркало')));
       if (!p.installed) kids.push(h('details', { style: 'margin-top:10px' }, h('summary', { class: 'small' }, 'Установить вручную по SSH (если установщик задаёт вопросы)'),
         cmdRow('С GitHub', p.install_cmd), cmdRow('Через зеркало', p.mirror_cmd),

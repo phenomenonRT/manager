@@ -8,11 +8,14 @@ package podkop
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +33,9 @@ const (
 	minFreeMB          = 20
 	minFreeNoSingboxMB = 40
 )
+
+// latestURL — последний релиз Podkop (переопределяется в тестах).
+var latestURL = "https://api.github.com/repos/itdoginfo/podkop/releases/latest"
 
 // Команды в виде, пригодном для копирования в SSH.
 var (
@@ -241,11 +247,10 @@ func (m *Manager) Install(mirror bool) error {
 	if f := freeMB(); f > 0 && f < need {
 		return fmt.Errorf("свободно %d МБ, для установки Podkop нужно не меньше %d МБ (sing-box ставится как зависимость). Освободите место или используйте extroot", f, need)
 	}
-	title, cmd := "Установка Podkop", "wget -O /tmp/podkop-install.sh "+scriptURL+" && sh /tmp/podkop-install.sh </dev/null"
 	if mirror {
-		title, cmd = "Установка Podkop (зеркало)", "wget -O - "+mirrorURL+" | sh"
+		return m.exec("Установка Podkop (зеркало)", "wget -O - "+mirrorURL+" | sh", 15*time.Minute)
 	}
-	return m.exec(title, cmd, 15*time.Minute)
+	return m.installLatest()
 }
 
 // Remove останавливает и удаляет Podkop.
@@ -307,4 +312,138 @@ func exitCode(err error) string {
 		return strconv.Itoa(ee.ExitCode())
 	}
 	return err.Error()
+}
+
+type ghAsset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+}
+
+// pickAssets выбирает из релиза пакеты нужного формата (ext: ".ipk" или ".apk")
+// в порядке установки: podkop, luci-app-podkop, luci-i18n-podkop-ru.
+func pickAssets(assets []ghAsset, ext string) ([]ghAsset, error) {
+	var out []ghAsset
+	for _, pre := range []string{"podkop-", "luci-app-podkop-", "luci-i18n-podkop-ru-"} {
+		found := false
+		for _, a := range assets {
+			if strings.HasPrefix(a.Name, pre) && strings.HasSuffix(a.Name, ext) {
+				out, found = append(out, a), true
+				break
+			}
+		}
+		if !found && pre != "luci-i18n-podkop-ru-" {
+			return nil, fmt.Errorf("в релизе нет пакета %s*%s", pre, ext)
+		}
+	}
+	return out, nil
+}
+
+func download(ctx context.Context, url, dst string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	f, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// installLatest скачивает пакеты последнего релиза с GitHub и ставит их менеджером
+// пакетов; зависимости (sing-box и др.) подтягиваются из репозиториев системы.
+func (m *Manager) installLatest() error {
+	if err := m.begin("Установка Podkop"); err != nil {
+		return err
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		pm, ext := pkgManager(), ".ipk"
+		if pm == "apk" {
+			ext = ".apk"
+		}
+		m.add("запрос последнего релиза: " + latestURL)
+		req, _ := http.NewRequestWithContext(ctx, "GET", latestURL, nil)
+		req.Header.Set("Accept", "application/vnd.github+json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			m.finish(fmt.Errorf("GitHub недоступен: %w (попробуйте установку через зеркало)", err))
+			return
+		}
+		var rel struct {
+			Tag    string    `json:"tag_name"`
+			Assets []ghAsset `json:"assets"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&rel)
+		resp.Body.Close()
+		if err != nil || resp.StatusCode != 200 {
+			m.finish(fmt.Errorf("не удалось получить релиз (HTTP %d)", resp.StatusCode))
+			return
+		}
+		pick, err := pickAssets(rel.Assets, ext)
+		if err != nil {
+			m.finish(err)
+			return
+		}
+		m.add("последняя версия: " + rel.Tag)
+		dir, err := os.MkdirTemp("", "podkop-")
+		if err != nil {
+			m.finish(err)
+			return
+		}
+		defer os.RemoveAll(dir)
+		var files []string
+		for _, a := range pick {
+			m.add("скачиваю " + a.Name)
+			dst := filepath.Join(dir, a.Name)
+			if err := download(ctx, a.URL, dst); err != nil {
+				m.finish(fmt.Errorf("%s: %w", a.Name, err))
+				return
+			}
+			files = append(files, "'"+dst+"'")
+		}
+		var shell string
+		if pm == "apk" {
+			shell = "apk update; apk add --allow-untrusted " + strings.Join(files, " ")
+		} else {
+			shell = "opkg update; opkg install " + strings.Join(files, " ")
+		}
+		m.add("$ " + shell)
+		cmd := exec.CommandContext(ctx, "sh", "-c", shell)
+		pr, pw := io.Pipe()
+		cmd.Stdout, cmd.Stderr = pw, pw
+		if err := cmd.Start(); err != nil {
+			m.finish(err)
+			return
+		}
+		go func() {
+			sc := bufio.NewScanner(pr)
+			for sc.Scan() {
+				m.add(sc.Text())
+			}
+		}()
+		err = cmd.Wait()
+		_ = pw.Close()
+		time.Sleep(200 * time.Millisecond)
+		if err != nil {
+			m.finish(fmt.Errorf("установка пакетов завершилась с кодом %s", exitCode(err)))
+			return
+		}
+		m.add("готово: Podkop " + rel.Tag)
+		m.finish(nil)
+	}()
+	return nil
 }
