@@ -513,9 +513,9 @@ func (s *Settings) Validate() []Issue {
 	if s.Firewall.DNSRedirect && s.DNS.Enabled {
 		h, _, err := net.SplitHostPort(s.DNS.Listen)
 		if err != nil {
-			add("error", "DNS: адрес слушателя должен быть вида 0.0.0.0:1053")
+			add("error", "DNS: адрес слушателя должен быть вида 192.168.1.1:1053 или 0.0.0.0:1053")
 		} else if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
-			add("error", "для перехвата DNS брандмауэром DNS-слушатель должен быть на 0.0.0.0, а не на %s", h)
+			add("error", "для перехвата DNS брандмауэром DNS-слушатель не может быть на %s: укажите адрес роутера в локальной сети (например 192.168.1.1:1053) или 0.0.0.0:1053 в разделе «DNS»", h)
 		}
 	}
 	if s.Firewall.Mode == "redirect" && s.Inbounds.RedirPort == 0 {

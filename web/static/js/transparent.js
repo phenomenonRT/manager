@@ -2,6 +2,7 @@
 // через ядро идут только приложения, вручную настроенные на порт mixed.
 import { h, note, toast, toastErr } from './ui.js';
 import * as st from './state.js';
+import { get } from './api.js';
 
 export const transparentOff = () => !!st.S.settings && st.S.settings.firewall.mode === 'off' && !st.S.settings.tun.enabled;
 
@@ -15,6 +16,17 @@ export function transparentNote() {
       s.firewall.mode = 'redirect';
       if (!s.firewall.lan_ifaces.length) s.firewall.lan_ifaces = [plat.lan_iface || 'br-lan'];
       s.firewall.dns_redirect = true;
+      // перехват DNS требует слушателя не на 127.0.0.1: берём адрес роутера в локальной сети
+      const lan = s.firewall.lan_ifaces[0];
+      let ip = '';
+      try {
+        const ifs = await get('api/interfaces');
+        const i = (ifs || []).find((x) => x.name === lan);
+        const a = i && (i.addrs || []).map((x) => String(x).split('/')[0]).find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
+        if (a) ip = a;
+      } catch (e) { /* возьмём 0.0.0.0 */ }
+      const port = String(s.dns.listen || '').split(':').pop() || '1053';
+      if (/^(127\.|localhost|\[?::1)/.test(String(s.dns.listen || '')) || !s.dns.listen) s.dns.listen = (ip || '0.0.0.0') + ':' + port;
       const r = await st.save(true);
       if (r.applied) el.remove();
       toast(r.applied ? 'Прозрачный прокси включён и применён' : 'Сохранено, но не применено: исправьте ошибки', r.applied ? 'ok' : 'err');
