@@ -26,6 +26,7 @@ import (
 	"corepanel/internal/firewall"
 	"corepanel/internal/importer"
 	"corepanel/internal/installer"
+	"corepanel/internal/kmods"
 	"corepanel/internal/model"
 	"corepanel/internal/platform"
 	"corepanel/internal/podkop"
@@ -44,6 +45,7 @@ type Server struct {
 	Sup     *supervisor.Supervisor
 	Inst    *installer.Installer
 	Podkop  *podkop.Manager
+	Kmods   *kmods.Manager
 
 	mu    sync.Mutex
 	key   []byte // ключ подписи сессий (хранится на диске — вход переживает перезапуск панели)
@@ -56,7 +58,7 @@ type failure struct {
 }
 
 func New(version string, info platform.Info, st *store.Store, sup *supervisor.Supervisor, inst *installer.Installer) *Server {
-	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Podkop: podkop.New(info),
+	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Podkop: podkop.New(info), Kmods: kmods.New(info),
 		key: loadKey(st.Dir()), fails: map[string]*failure{}}
 }
 
@@ -145,6 +147,14 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "logs/stream", s.logStream, true)
 	api("GET", "podkop", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Podkop.Status(r.Context())) }, true)
 	api("POST", "podkop/{action}", s.podkopAction, true)
+	api("GET", "kmods", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Kmods.Check()) }, true)
+	api("POST", "kmods/install", func(w http.ResponseWriter, r *http.Request) {
+		if started, why := s.Kmods.Install(); !started {
+			fail(w, 409, why)
+			return
+		}
+		ok(w, s.Kmods.Check())
+	}, true)
 
 	// Прокси к Clash API ядра (любой метод, поэтому вне api()).
 	mux.HandleFunc("/api/clash/", func(w http.ResponseWriter, r *http.Request) {

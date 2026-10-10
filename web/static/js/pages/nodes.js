@@ -17,7 +17,7 @@ export default async function (root) {
   function drawTable() {
     clear(tableBox);
     if (!s.nodes.length) { tableBox.append(h('div', { class: 'empty' }, 'Узлов пока нет. Импортируйте ссылки или подписку ниже, либо добавьте узел вручную.')); return; }
-    tableBox.append(h('div', { class: 'tw' }, h('table',
+    tableBox.append(h('div', { class: 'tw' }, h('table', { class: 'stack' },
       h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', ''))),
       h('tbody', s.nodes.map((n, i) => h('tr', { class: n.disabled ? 'off' : '' },
         h('td', h('input', { type: 'checkbox', checked: !n.disabled, 'aria-label': 'Включить ' + n.name, onchange: (e) => { n.disabled = !e.target.checked; st.touch(); drawTable(); } })),

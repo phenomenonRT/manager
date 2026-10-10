@@ -53,7 +53,7 @@ export function toast(msg, kind = '', ms = 4200) {
   const box = document.getElementById('toasts');
   const t = h('div', { class: 'toast ' + kind, role: kind === 'err' ? 'alert' : 'status' }, msg);
   box.append(t);
-  setTimeout(() => t.remove(), kind === 'err' ? Math.max(ms, 7000) : ms);
+  setTimeout(() => t.remove(), kind === 'err' ? Math.max(ms, 25000) : ms); // ошибки висят 25 с
 }
 export const errMsg = (e) => (e && e.message) || String(e);
 export const toastErr = (e) => { if (!e || e.name !== 'AbortError') toast(errMsg(e), 'err'); };

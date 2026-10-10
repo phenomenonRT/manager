@@ -254,8 +254,6 @@ func notes(in Info) []string {
 	switch in.OS {
 	case Keenetic:
 		n = append(n, "Keenetic: нужен компонент «Пакеты OPKG» с установленным Entware. Поддержка TUN и TPROXY зависит от модели и версии прошивки — при недоступности используйте режим redirect (iptables).")
-	case OpenWrt:
-		n = append(n, "OpenWrt: для режимов TUN/TPROXY нужны модули ядра kmod-tun и kmod-nft-tproxy (opkg install kmod-tun kmod-nft-tproxy).")
 	}
 	return n
 }

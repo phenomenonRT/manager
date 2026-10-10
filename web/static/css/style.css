@@ -180,3 +180,61 @@ main{padding:14px 16px 120px}
 .mod-meta{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--mute,#667);word-break:break-all}
 .mod-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .mod-act input[type=text]{flex:1;min-width:140px}
+
+/* ---- модули ядра (TUN/TPROXY) ---- */
+.blurred{filter:blur(2.5px) grayscale(.5);opacity:.55;pointer-events:none;user-select:none}
+.need{border:1px solid var(--warn);background:var(--warn-soft);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.need .need-t{font-size:15px}
+.need p{margin:6px 0 10px}
+
+/* ---- полировка и мобильная версия ---- */
+body{overflow-x:clip;-webkit-font-smoothing:antialiased}
+h2{font-size:15px;font-weight:650;letter-spacing:-.005em;text-transform:none;color:var(--ink);font-family:inherit;margin:0 0 12px}
+.card{border-radius:12px;padding:16px 18px;box-shadow:0 1px 2px rgba(20,32,32,.05)}
+.tw,.rule,pre.code,.log,.empty,.note{border-radius:10px}
+.btn{min-height:34px;border-radius:8px;transition:border-color .15s,background .15s,box-shadow .15s}
+.btn.primary:hover{filter:brightness(1.07)}
+input[type=text],input[type=number],input[type=password],input[type=url],select,textarea{border-radius:8px;min-height:34px;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px var(--accent-soft)}
+.top{background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:saturate(1.4) blur(10px)}
+.side a{margin:1px 8px;padding:8px 12px;border-left:0;border-radius:8px}
+.side a[aria-current=page]{background:var(--accent-soft);color:var(--accent);border-left:0}
+.badge{padding:2px 9px}
+.pagehead h1{font-size:22px}
+main{min-width:0}
+@media(max-width:820px){
+  .top{gap:8px}
+  .top .btn{padding:4px 9px;font-size:12.5px;min-height:34px}
+  .side a{padding:11px 14px;font-size:15px}
+  .btn{min-height:40px}.btn.sm{min-height:34px}
+  input[type=text],input[type=number],input[type=password],input[type=url],select,textarea{font-size:16px;min-height:40px}
+  .card{padding:14px;border-radius:10px}
+  .pagehead h1{font-size:20px}
+  .toast{font-size:14px}
+  /* таблица узлов: карточки вместо колонок */
+  .tw:has(table.stack){border:0;background:transparent;overflow:visible}
+  table.stack thead{display:none}
+  table.stack,table.stack tbody{display:block}
+  table.stack tr{display:grid;grid-template-columns:30px 1fr auto;gap:4px 10px;align-items:center;padding:12px;margin-bottom:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+  table.stack td{display:block;border:0;padding:0;min-width:0;word-break:break-word}
+  table.stack td:nth-child(1){grid-row:1/3;grid-column:1}
+  table.stack td:nth-child(2){grid-column:2;grid-row:1;font-weight:600}
+  table.stack td:nth-child(3){grid-column:3;grid-row:1}
+  table.stack td:nth-child(4){grid-column:2/4;grid-row:2;color:var(--mute)}
+  table.stack td:nth-child(5){grid-column:1/4;grid-row:3;text-align:left;padding-top:6px;display:flex;gap:8px}
+  table.stack td:nth-child(5) .btn{flex:1}
+  .mod{padding:14px 14px 14px 18px}
+  .mod-act .btn{flex:1 1 140px}
+  #svc{font-size:12px}
+}
+@media(max-width:520px){
+  .top #svc{font-size:0}.top #svc .dot{font-size:12px}
+  .brand{font-size:14px}
+  main{padding:12px 12px 120px}
+}
+@media(max-width:520px){
+  .top{padding:0 8px;gap:6px}
+  .top .badge{max-width:92px;overflow:hidden;text-overflow:ellipsis}
+  .top .btn.ghost{padding:4px 6px;font-size:12px;white-space:nowrap}
+  .top .grow{min-width:0}
+}

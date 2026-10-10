@@ -1,5 +1,5 @@
 import { apd, h, clear, pageHead, note, field, fgrid, txt, num, pw, lines, sel, chk, badge, modal, copy, toastErr } from '../ui.js';
-import { get } from '../api.js';
+import { get, post } from '../api.js';
 import * as st from '../state.js';
 
 const S = st.S;
@@ -34,7 +34,8 @@ export default async function (root) {
     } catch (e) { toastErr(e); }
   }
 
-  apd(root, pageHead('Входящие, TUN и сеть', 'Как трафик попадает в ядро и общие параметры'), dl,
+  const kmBox = h('div');
+  apd(root, pageHead('Входящие, TUN и сеть', 'Как трафик попадает в ядро и общие параметры'), dl, kmBox,
     (plat.notes && plat.notes.length) ? h('div', plat.notes.map((n) => note('warn', h('b', (plat.os_name || 'Платформа') + ': '), n))) : null,
     h('div', { class: 'card' }, h('h2', 'Какой режим выбрать'),
       h('div', { class: 'tw' }, h('table', h('thead', h('tr', h('th', 'Режим'), h('th', 'Как работает'), h('th', 'Когда подходит'))),
@@ -80,4 +81,38 @@ export default async function (root) {
       chk(fw, 'dns_redirect', 'Перехватывать DNS (порт 53) на ядро', 'Устройства, у которых прописан чужой DNS, всё равно будут использовать DNS ядра. Требует DNS-слушатель на 0.0.0.0.'),
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: preview }, 'Показать скрипты nft/iptables'), h('span', { class: 'small mute' }, 'Проверьте, что будет выполнено при старте'))));
   drawIfs();
+
+  // ---- модули ядра для TUN и TPROXY (OpenWrt) ----
+  let kmT = 0, kmAlive = true;
+  const card = (title) => [...root.querySelectorAll('.card')].find((c) => c.querySelector('h2') && c.querySelector('h2').textContent === title);
+  function kmApply(k) {
+    const tunCard = card('TUN');
+    if (tunCard) tunCard.classList.toggle('blurred', !k.tun);
+    const opt = root.querySelector('option[value="tproxy"]');
+    if (opt) { opt.disabled = !k.tproxy && fw.mode !== 'tproxy'; opt.textContent = 'tproxy — TCP+UDP' + (k.tproxy ? '' : ' (нужен kmod-nft-tproxy)'); }
+    clear(kmBox);
+    const miss = [!k.tun ? 'kmod-tun (для TUN)' : null, !k.tproxy ? 'kmod-nft-tproxy (для tproxy)' : null].filter(Boolean);
+    if (!miss.length) return;
+    const j = k.job || {};
+    const btn = k.installable ? h('button', { class: 'btn primary', disabled: !!j.running, onclick: async () => {
+      try { await post('api/kmods/install'); kmLoad(); } catch (e) { toastErr(e); }
+    } }, j.running ? 'Устанавливаю…' : 'Установить') : null;
+    kmBox.append(h('div', { class: 'need' },
+      h('div', { class: 'need-t' }, h('b', 'Нужно установить модули ядра: '), miss.join(', ')),
+      h('p', { class: 'small' }, 'Без них недоступны ' + (!k.tun && !k.tproxy ? 'режимы TUN и tproxy' : !k.tun ? 'режим TUN' : 'режим tproxy') + ' — они затемнены. Режим redirect работает без модулей. Команда: ', h('code', k.command)),
+      k.installable ? null : h('p', { class: 'small' }, 'Автоматическая установка доступна только на OpenWrt с opkg или apk. На Keenetic модули зависят от прошивки.'),
+      btn,
+      j.error ? note('err', j.error) : null,
+      (j.running || j.finished) ? h('pre', { class: 'code', style: 'max-height:220px;margin-top:8px' }, (j.output || []).join('\n')) : null));
+  }
+  async function kmLoad() {
+    clearTimeout(kmT);
+    let k;
+    try { k = await get('api/kmods'); } catch (e) { return; }
+    if (!kmAlive) return;
+    kmApply(k);
+    if (k.job && k.job.running) kmT = setTimeout(kmLoad, 1500);
+  }
+  kmLoad();
+  return () => { kmAlive = false; clearTimeout(kmT); };
 }
