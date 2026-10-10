@@ -76,16 +76,19 @@ function startApp() {
   const themeBtn = h('button', { class: 'btn sm ghost', title: 'Переключить тему', onclick: () => cycleTheme(themeBtn) }, 'Тема: ' + THEMES.find((t) => t[0] === curTheme())[1]);
   const svc = h('a', { href: '#/dashboard', class: 'small', style: 'text-decoration:none;color:inherit' });
   const coreB = h('span', { class: 'badge acc' });
+  const verB = h('span', { class: 'ver', title: 'Версия панели' });
   const burger = h('button', { class: 'btn sm icon burger', 'aria-label': 'Меню', onclick: () => document.body.classList.toggle('nav') }, '☰');
   const nav = h('nav', { class: 'side', 'aria-label': 'Разделы' }, ROUTES.map(([id, t]) => h('a', { href: '#/' + id, 'data-r': id, onclick: () => document.body.classList.remove('nav') }, t)));
   main = h('main', { id: 'main', tabindex: '-1' });
   barEl = h('div', { id: 'bar', hidden: true });
   clear(app).append(
-    h('header', { class: 'top' }, burger, h('span', { class: 'brand' }, 'core', h('i', 'panel')), coreB, h('span', { class: 'grow' }), svc, themeBtn),
+    h('header', { class: 'top' }, burger, h('span', { class: 'brand' }, 'core', h('i', 'panel')), coreB, verB, h('span', { class: 'grow' }), svc, themeBtn),
     h('div', { class: 'shell' }, nav, main), h('div', { class: 'scrim', onclick: () => document.body.classList.remove('nav') }), barEl);
 
   const paint = () => {
     coreB.textContent = st.coreName(S.settings.core);
+    const pv = S.system && S.system.panel_version;
+    verB.textContent = pv ? 'v' + String(pv).replace(/^v/, '') : '';
     const stt = S.status ? S.status.state : '—';
     const kind = stt === 'running' ? 'ok' : (stt === 'error' || stt === 'failed') ? 'err' : 'warn';
     clear(svc).append(h('span', { class: 'dot ' + kind }), stt === 'running' ? 'работает' : stt === 'stopped' ? 'остановлен' : stt);

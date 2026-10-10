@@ -7,7 +7,7 @@ on:
       version:
         description: "Версия (например 0.1.2)"
         required: true
-        default: "0.1.17"
+        default: "0.1.18"
       release:
         description: "Создать GitHub Release с файлами"
         type: boolean

@@ -350,7 +350,7 @@ var reserved = map[string]bool{"direct": true, "block": true, "DIRECT": true, "R
 var badNameChars = regexp.MustCompile(`[,\n\r"]`)
 
 // SupportedNodeTypes — типы узлов, которые умеет собирать панель.
-var SupportedNodeTypes = []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "wireguard", "awg", "socks", "http"}
+var SupportedNodeTypes = []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "wireguard", "awg", "socks", "http", "iface"}
 
 // Validate проверяет настройки и возвращает список замечаний.
 func (s *Settings) Validate() []Issue {
@@ -388,7 +388,11 @@ func (s *Settings) Validate() []Issue {
 			add("error", "узел «%s»: неизвестный тип «%s»", n.Name, n.Type)
 			continue
 		}
-		if n.Server == "" || n.Port <= 0 || n.Port > 65535 {
+		if n.Type == "iface" {
+			if n.BindInterface == "" {
+				add("error", "узел «%s»: выберите системный интерфейс VPN (например, sstp-vpn0)", n.Name)
+			}
+		} else if n.Server == "" || n.Port <= 0 || n.Port > 65535 {
 			add("error", "узел «%s»: укажите сервер и порт (1–65535)", n.Name)
 		}
 		switch n.Type {

@@ -420,6 +420,9 @@ func sbNode(s *model.Settings, p *plan, n model.Node) *O {
 		o.Set("type", "http")
 		srv()
 		o.Opt("username", n.Username).Opt("password", n.Password).Opt("tls", sbTLS(n))
+	case "iface":
+		// готовый туннель из системы (sstp, l2tp, pptp, openvpn, wg…): трафик выпускается через его интерфейс
+		o.Set("type", "direct")
 	default:
 		p.warn("узел «%s»: тип «%s» не поддерживается генератором", n.Name, n.Type)
 		return nil

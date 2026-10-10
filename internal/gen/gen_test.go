@@ -274,3 +274,32 @@ func hasError(is []model.Issue) bool {
 	}
 	return false
 }
+
+func TestIfaceNode(t *testing.T) {
+	s := model.Default()
+	s.Nodes = []model.Node{{Name: "sstp", Type: "iface", BindInterface: "sstp-vpn0"}}
+	if issues := s.Validate(); func() bool {
+		for _, i := range issues {
+			if i.Level == "error" && strings.Contains(i.Message, "sstp") {
+				return true
+			}
+		}
+		return false
+	}() {
+		t.Fatalf("валидация: %v", issues)
+	}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(res.Config), `"bind_interface": "sstp-vpn0"`) {
+		t.Errorf("нет bind_interface: %s", res.Config)
+	}
+	s.Nodes[0].BindInterface = ""
+	for _, i := range s.Validate() {
+		if i.Level == "error" && strings.Contains(i.Message, "sstp") {
+			return
+		}
+	}
+	t.Error("пустой интерфейс должен давать ошибку")
+}

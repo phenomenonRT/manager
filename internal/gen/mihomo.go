@@ -355,6 +355,8 @@ func mhProxies(s *model.Settings, p *plan) ([]any, []any) {
 			if n.System {
 				p.warn("узел «%s»: системный интерфейс WireGuard есть только в sing-box — в Mihomo используется встроенный туннель", n.Name)
 			}
+		case "iface":
+			o.Set("type", "direct").Set("udp", true)
 		case "awg":
 			p.warn("узел «%s»: AmneziaWG работает только на ядре amnezia-box — узел пропущен", n.Name)
 			fail = true

@@ -3,7 +3,7 @@ import { get, post } from '../api.js';
 import * as st from '../state.js';
 
 const S = st.S;
-export const TYPES = [['vless', 'VLESS'], ['vmess', 'VMess'], ['trojan', 'Trojan'], ['shadowsocks', 'Shadowsocks'], ['hysteria2', 'Hysteria2'], ['tuic', 'TUIC'], ['wireguard', 'WireGuard'], ['awg', 'AmneziaWG'], ['socks', 'SOCKS5'], ['http', 'HTTP']];
+export const TYPES = [['vless', 'VLESS'], ['vmess', 'VMess'], ['trojan', 'Trojan'], ['shadowsocks', 'Shadowsocks'], ['hysteria2', 'Hysteria2'], ['tuic', 'TUIC'], ['wireguard', 'WireGuard'], ['awg', 'AmneziaWG'], ['socks', 'SOCKS5'], ['http', 'HTTP'], ['iface', 'Системный VPN (интерфейс)']];
 const TYPE_NAME = Object.fromEntries(TYPES);
 const SS_METHODS = ['2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305', 'aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305', 'xchacha20-ietf-poly1305', 'none'];
 let ifacePromise = null;
@@ -23,7 +23,7 @@ export default async function (root) {
         h('td', h('input', { type: 'checkbox', checked: !n.disabled, 'aria-label': 'Включить ' + n.name, onchange: (e) => { n.disabled = !e.target.checked; st.touch(); drawTable(); } })),
         h('td', n.name, n.detour ? h('div', { class: 'small mute' }, '→ через ' + n.detour) : null),
         h('td', badge(TYPE_NAME[n.type] || n.type)),
-        h('td', { class: 'mono' }, n.server + ':' + n.port),
+        h('td', { class: 'mono' }, n.type === 'iface' ? '⇄ ' + (n.bind_interface || '—') : n.server + ':' + n.port),
         h('td', { class: 'act' },
           h('button', { class: 'btn sm', onclick: () => editNode(i) }, 'Изменить'), ' ',
           h('button', { class: 'btn sm', title: 'Дублировать', onclick: () => dup(i) }, '⧉'), ' ',
@@ -116,7 +116,8 @@ export default async function (root) {
         text: 'Готово', primary: true, onclick: () => {
           d.name = (d.name || '').trim();
           if (!d.name) { toast('Укажите имя узла', 'err'); return false; }
-          if (!d.server || !(d.port > 0 && d.port <= 65535)) { toast('Укажите сервер и порт (1–65535)', 'err'); return false; }
+          if (d.type === 'iface') { d.server = ''; d.port = 0; d.detour = ''; if (!d.bind_interface) { toast('Выберите интерфейс VPN', 'err'); return false; } }
+          else if (!d.server || !(d.port > 0 && d.port <= 65535)) { toast('Укажите сервер и порт (1–65535)', 'err'); return false; }
           const taken = takenNames(); if (orig) taken.delete(orig.name);
           if (taken.has(d.name)) { toast('Имя «' + d.name + '» уже занято', 'err'); return false; }
           if (!isNew) { st.renameRef(orig.name, d.name); s.nodes[idx] = d; } else s.nodes.push(d);
@@ -131,6 +132,7 @@ function defaults(d) {
   if (['trojan', 'hysteria2', 'tuic'].includes(d.type)) d.tls = true;
   if (d.type === 'awg') { d.port = 51820; d.mtu = 1280; d.allowed_ips = ['0.0.0.0/0', '::/0']; d.addresses = []; d.awg = d.awg || { jc: 4, jmin: 40, jmax: 70 }; }
   if (d.type === 'wireguard') { d.port = 51820; d.mtu = 1420; d.allowed_ips = ['0.0.0.0/0', '::/0']; d.addresses = []; }
+  if (d.type === 'iface') { d.server = ''; d.port = 0; d.udp = true; }
   if (d.type === 'socks') d.port = 1080;
   if (d.type === 'http') d.port = 8080;
   if (d.type === 'shadowsocks') d.method = d.method || '2022-blake3-aes-128-gcm';
@@ -148,8 +150,14 @@ function nodeForm(d, rebuild) {
   out.append(fgrid(
     field('Имя', txt(d, 'name', { ph: 'Мой узел' }), 'Уникальное имя: без запятых и кавычек, не «direct» и не «block».'),
     field('Тип', typeSel),
-    field('Сервер', txt(d, 'server', { ph: 'example.com или IP' })),
-    field('Порт', num(d, 'port', { min: 1, max: 65535 }))));
+    ...(t === 'iface' ? [] : [field('Сервер', txt(d, 'server', { ph: 'example.com или IP' })),
+      field('Порт', num(d, 'port', { min: 1, max: 65535 }))])));
+  if (t === 'iface') {
+    out.append(fgrid(field('Интерфейс', txt(d, 'bind_interface', { ph: 'например, sstp-vpn0, ppp0, l2tp-vpn, tun1', list: 'ifl' }),
+      'Туннель должен быть уже поднят в системе (OpenWrt: Сеть → Интерфейсы; Keenetic: подключение SSTP/L2TP/PPTP/OpenVPN). Панель направит через него трафик по вашим правилам; сам туннель не настраивается и не запускается.')));
+    out.append(help('Такой узел можно добавить в группу: urltest сам переключится на другой узел, если системный VPN откажет; в Mihomo ещё есть fallback — первый доступный по порядку.'));
+    return out;
+  }
 
   const uuidBtn = (key) => h('button', { type: 'button', class: 'btn sm', onclick: async () => { try { const r = await keygen('uuid'); d[key] = r.uuid; rebuild(); } catch (e) { toastErr(e); } } }, 'новый');
   const uuidField = () => field('UUID', h('div', { class: 'pw' }, txt(d, 'uuid', { ph: 'xxxxxxxx-xxxx-…' }), uuidBtn('uuid')));

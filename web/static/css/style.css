@@ -249,3 +249,6 @@ main{min-width:0}
 .xbtn:hover{opacity:1;background:rgba(0,0,0,.12)}
 .toast{display:flex;gap:8px;align-items:flex-start}
 .toast .tmsg{flex:1;min-width:0}
+
+.top .ver{font-size:12px;color:var(--mute,#888);font-variant-numeric:tabular-nums;margin-left:2px}
+@media(max-width:560px){.top .ver{display:none}}
