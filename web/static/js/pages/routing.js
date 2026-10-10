@@ -1,6 +1,7 @@
 import { apd, h, clear, pageHead, note, field, fgrid, txt, num, sel, chk, toast, help } from '../ui.js';
 import { ruleEditor } from '../rules.js';
 import * as st from '../state.js';
+import { transparentNote } from '../transparent.js';
 
 const S = st.S;
 const SB = 'https://raw.githubusercontent.com/SagerNet/';
@@ -45,7 +46,7 @@ export default async function (root) {
 
   const presetSel = { v: '0' };
   const g = s.general;
-  apd(root, pageHead('Маршрутизация', 'Правила применяются сверху вниз: побеждает первое подходящее'),
+  apd(root, pageHead('Маршрутизация', 'Правила применяются сверху вниз: побеждает первое подходящее'), transparentNote(),
     h('div', { class: 'card' }, h('h2', 'Общее'),
       fgrid(field('Final — исходящий по умолчанию', sel(s, 'final', outs()), 'Куда отправлять трафик, не попавший ни под одно правило.'),
         field('Скачивать наборы правил через', sel(g, 'update_via', [['direct', 'direct — напрямую'], ...outs().filter((o) => o[0] !== 'direct' && o[0] !== 'block')]), 'Если GitHub заблокирован, укажите здесь рабочий узел или группу.')),

@@ -1,6 +1,7 @@
 import { apd, h, clear, pageHead, badge, note, fmtBytes, fmtDur, toast, toastErr, spinner } from '../ui.js';
 import { get, post, put, streamJSON } from '../api.js';
 import * as st from '../state.js';
+import { transparentNote } from '../transparent.js';
 
 const S = st.S;
 const STATE_RU = { running: 'работает', stopped: 'остановлен', starting: 'запускается', stopping: 'останавливается', error: 'ошибка', failed: 'ошибка' };
@@ -45,6 +46,7 @@ export default async function (root) {
   }
   function drawPend() {
     clear(pendBox);
+    const tn = transparentNote(); if (tn) pendBox.append(tn);
     if (st.isDirty()) pendBox.append(note('warn', h('b', 'Есть несохранённые изменения. '), 'Сохраните их кнопкой внизу страницы.'));
     else if (S.needApply) pendBox.append(note('warn', h('b', 'Настройки сохранены, но не применены. '), 'Нажмите «Применить» внизу или перезапустите сервис.'));
   }

@@ -433,6 +433,10 @@ func (s *Settings) Validate() []Issue {
 		}
 	}
 
+	if s.Firewall.Mode == "off" && !s.Tun.Enabled {
+		add("warn", "прозрачный прокси выключен (режим брандмауэра «off», TUN выключен): трафик устройств сети не перехватывается, через ядро идут только приложения, настроенные на прокси роутера (порт %d)", s.Inbounds.MixedPort)
+	}
+
 	exists := func(n string) bool {
 		if n == "direct" || n == "block" {
 			return true
