@@ -55,6 +55,7 @@ export async function save(apply) {
   S.busy = true; emit();
   try {
     pruneRefs();
+    await fixDnsListen();
     await validate();
     const r = await put('api/settings', S.settings);
     if (r && r.issues && r.issues.length) S.issues = r.issues;
@@ -98,6 +99,25 @@ export function renameRef(oldN, newN) {
   if (s.general.update_via === oldN) s.general.update_via = newN;
   if (s.dns.remote_detour === oldN) s.dns.remote_detour = newN;
 }
+// Перехват DNS брандмауэром не работает при слушателе на 127.0.0.1: переносим его на адрес роутера в LAN.
+export async function fixDnsListen() {
+  const s = S.settings;
+  if (!s || !s.firewall.dns_redirect || !s.dns.enabled) return false;
+  const cur = String(s.dns.listen || '');
+  if (cur && !/^(127\.|localhost|\[?::1)/.test(cur)) return false;
+  const lan = s.firewall.lan_ifaces[0] || (S.system && S.system.platform && S.system.platform.lan_iface) || 'br-lan';
+  let ip = '';
+  try {
+    const ifs = await get('api/interfaces');
+    const i = (ifs || []).find((x) => x.name === lan);
+    ip = ((i && i.addrs) || []).map((x) => String(x).split('/')[0]).find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x)) || '';
+  } catch (e) { /* возьмём 0.0.0.0 */ }
+  const port = cur.split(':').pop() || '1053';
+  s.dns.listen = (ip || '0.0.0.0') + ':' + (/^\d+$/.test(port) ? port : '1053');
+  window.dispatchEvent(new CustomEvent('cp-fixed', { detail: ['DNS-слушатель перенесён на ' + s.dns.listen + ' (нужно для перехвата DNS)'] }));
+  return true;
+}
+
 // Убирает ссылки на несуществующие узлы и группы (после удаления или замены узлов).
 // Битые ссылки заменяются на direct, группы теряют лишних участников. Возвращает список правок.
 export function pruneRefs() {
