@@ -87,7 +87,14 @@ export default async function (root) {
   const card = (title) => [...root.querySelectorAll('.card')].find((c) => c.querySelector('h2') && c.querySelector('h2').textContent === title);
   function kmApply(k) {
     const tunCard = card('TUN');
-    if (tunCard) tunCard.classList.toggle('blurred', !k.tun);
+    if (tunCard) {
+      tunCard.classList.toggle('blurred', !k.tun);
+      // подпись поверх затемнённой карточки: лежит рядом с ней, чтобы размытие её не касалось
+      let wrap = tunCard.parentElement;
+      if (!wrap.classList.contains('blurwrap')) { wrap = h('div', { class: 'blurwrap' }); tunCard.replaceWith(wrap); wrap.append(tunCard); }
+      const old = wrap.querySelector('.blurlabel'); if (old) old.remove();
+      if (!k.tun) wrap.append(h('div', { class: 'blurlabel' }, h('b', 'Требуются пакеты'), h('span', 'Для TUN нужен kmod-tun — установите его кнопкой вверху страницы')));
+    }
     const opt = root.querySelector('option[value="tproxy"]');
     if (opt) { opt.disabled = !k.tproxy && fw.mode !== 'tproxy'; opt.textContent = 'tproxy — TCP+UDP' + (k.tproxy ? '' : ' (нужен kmod-nft-tproxy)'); }
     clear(kmBox);

@@ -238,3 +238,8 @@ main{min-width:0}
   .top .btn.ghost{padding:4px 6px;font-size:12px;white-space:nowrap}
   .top .grow{min-width:0}
 }
+.blurwrap{position:relative}
+.blurwrap>.card{margin-bottom:14px}
+.blurlabel{position:absolute;inset:0 0 14px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:16px;pointer-events:none}
+.blurlabel b{font-size:16px;padding:6px 14px;border-radius:99px;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+.blurlabel span{font-size:13px;color:var(--ink);background:var(--surface);padding:2px 10px;border-radius:8px}
