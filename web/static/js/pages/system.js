@@ -2,6 +2,9 @@ import { apd, h, pageHead, field, pw, note, toast, toastErr, txt, confirmBox, ch
 import { get, post } from '../api.js';
 import * as st from '../state.js';
 
+// внешняя ссылка: в новой вкладке, без передачи адреса панели
+const ext = (href, text) => h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, text);
+
 export default async function (root) {
   const S = st.S;
   const a = { password: '' };
@@ -80,7 +83,11 @@ export default async function (root) {
   apd(root, pageHead('Система', 'Параметры самой панели'),
     h('div', { class: 'card' }, h('h2', 'О панели'), h('dl', { class: 'kv' },
       h('dt', 'Версия'), h('dd', (S.system && S.system.panel_version) || '—'), h('dt', 'Вход'), h('dd', S.session && S.session.auth_enabled ? 'по паролю root' : 'без пароля (только из локальной сети)'),
-      h('dt', 'Каталог данных'), h('dd', { class: 'mono' }, (S.system && S.system.platform && S.system.platform.data_dir) || '—'))),
+      h('dt', 'Каталог данных'), h('dd', { class: 'mono' }, (S.system && S.system.platform && S.system.platform.data_dir) || '—'),
+      h('dt', 'Проект на GitHub'), h('dd', { class: 'links' },
+        ext('https://github.com/phenomenonRT/manager', 'Исходный код и описание'),
+        ext('https://github.com/phenomenonRT/manager/releases', 'Релизы'),
+        ext('https://github.com/phenomenonRT/manager/issues', 'Сообщить о проблеме')))),
     updBox,
     h('div', { class: 'cols' },
       authCard(),

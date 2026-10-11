@@ -278,3 +278,5 @@ main{min-width:0}
 .dp-hint.bad{color:var(--err)}
 .dp-hint.bad::before{content:"! ";font-weight:700}
 @media(max-width:560px){.dp-o{padding:9px 12px}}
+.kv dd.links{display:flex;flex-wrap:wrap;gap:2px 16px}
+.kv dd.links a{color:var(--accent)}
