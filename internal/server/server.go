@@ -32,6 +32,7 @@ import (
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
 	"corepanel/internal/sysauth"
+	"corepanel/internal/updater"
 	"corepanel/web"
 )
 
@@ -44,6 +45,7 @@ type Server struct {
 	Sup     *supervisor.Supervisor
 	Inst    *installer.Installer
 	Kmods   *kmods.Manager
+	Updater *updater.Updater
 
 	mu    sync.Mutex
 	key   []byte // ключ подписи сессий (хранится на диске — вход переживает перезапуск панели)
@@ -57,7 +59,8 @@ type failure struct {
 
 func New(version string, info platform.Info, st *store.Store, sup *supervisor.Supervisor, inst *installer.Installer) *Server {
 	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Kmods: kmods.New(info),
-		key: loadKey(st.Dir()), fails: map[string]*failure{}}
+		Updater: updater.New(version, info, st.Get, nil),
+		key:     loadKey(st.Dir()), fails: map[string]*failure{}}
 }
 
 func loadKey(dir string) []byte {
@@ -143,6 +146,20 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "firewall/preview", s.fwPreview, true)
 	api("GET", "logs", s.logs, true)
 	api("GET", "logs/stream", s.logStream, true)
+	api("GET", "update", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Updater.State()) }, true)
+	api("POST", "update/check", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		s.Updater.Check(ctx)
+		ok(w, s.Updater.State())
+	}, true)
+	api("POST", "update/apply", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Updater.Apply(); err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		ok(w, s.Updater.State())
+	}, true)
 	api("GET", "kmods", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Kmods.Check()) }, true)
 	api("POST", "kmods/remove", func(w http.ResponseWriter, r *http.Request) {
 		if started, why := s.Kmods.Remove(); !started {

@@ -201,3 +201,16 @@ func TestLocalOnlyWhenOpen(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateEndpoints(t *testing.T) {
+	ts, _ := newTest(t)
+	jar, _ := cookiejarNew()
+	c := &http.Client{Jar: jar}
+	r, out := do(t, c, "GET", ts.URL+"/api/update", "")
+	if r.StatusCode != 200 || !strings.Contains(out, `"available":false`) {
+		t.Fatalf("GET update: %d %s", r.StatusCode, out)
+	}
+	if r, _ := do(t, c, "POST", ts.URL+"/api/update/apply", "{}"); r.StatusCode != 409 {
+		t.Fatalf("apply без проверки должен отказывать: %d", r.StatusCode)
+	}
+}

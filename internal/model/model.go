@@ -23,6 +23,7 @@ type Settings struct {
 	Version   int    `json:"version"`
 	Core      string `json:"core"`      // singbox | mihomo | amnezia
 	Autostart bool   `json:"autostart"` // запускать ядро вместе с панелью
+	Update    Update `json:"update"`
 
 	General  General   `json:"general"`
 	Inbounds Inbounds  `json:"inbounds"`
@@ -204,6 +205,11 @@ type Firewall struct {
 	Backend     string   `json:"backend"`      // auto | nft | iptables
 	FwMark      int      `json:"fwmark"`       // метка для tproxy
 	RouteTable  int      `json:"route_table"`  // таблица маршрутизации для tproxy
+}
+
+// Update — настройки обновления самой панели.
+type Update struct {
+	Auto bool `json:"auto"` // автоматически ставить новые версии (по умолчанию выключено)
 }
 
 type Download struct {

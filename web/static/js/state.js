@@ -10,7 +10,7 @@ export const isDirty = () => !!S.settings && JSON.stringify(S.settings) !== S.sa
 
 export function normalize(s) {
   const arr = (o, k) => { if (!Array.isArray(o[k])) o[k] = []; };
-  for (const k of ['general', 'inbounds', 'tun', 'dns', 'firewall', 'download']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
+  for (const k of ['general', 'inbounds', 'tun', 'dns', 'firewall', 'download', 'update']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
   for (const k of ['nodes', 'groups', 'rule_sets', 'rules']) arr(s, k);
   arr(s.dns, 'rules'); arr(s.tun, 'exclude_cidr');
   for (const k of ['lan_ifaces', 'include', 'exclude', 'bypass_dst']) arr(s.firewall, k);

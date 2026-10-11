@@ -88,7 +88,8 @@ function startApp() {
   const paint = () => {
     coreB.textContent = st.coreName(S.settings.core);
     const pv = S.system && S.system.panel_version;
-    verB.textContent = pv ? 'v' + String(pv).replace(/^v/, '') : '';
+    verB.textContent = pv ? 'v' + String(pv).replace(/^v/, '') + (S.update && S.update.available ? ' ↑' : '') : '';
+    verB.title = S.update && S.update.available ? 'Доступна версия v' + S.update.latest + ' — раздел «Система»' : 'Версия панели';
     const stt = S.status ? S.status.state : '—';
     const kind = stt === 'running' ? 'ok' : (stt === 'error' || stt === 'failed') ? 'err' : 'warn';
     clear(svc).append(h('span', { class: 'dot ' + kind }), stt === 'running' ? 'работает' : stt === 'stopped' ? 'остановлен' : stt === 'waiting' ? 'ждёт сеть' : stt);

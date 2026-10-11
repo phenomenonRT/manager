@@ -1,5 +1,5 @@
-import { apd, h, pageHead, field, pw, note, toast, toastErr, txt, confirmBox } from '../ui.js';
-import { post } from '../api.js';
+import { apd, h, pageHead, field, pw, note, toast, toastErr, txt, confirmBox, chk, clear } from '../ui.js';
+import { get, post } from '../api.js';
 import * as st from '../state.js';
 
 export default async function (root) {
@@ -28,10 +28,60 @@ export default async function (root) {
         field('Пароль root', pw(a, 'password'), 'Если пароль root не задан, выполните по SSH команду passwd. Забыли пароль — по SSH: corepanel auth off.'),
         h('button', { class: 'btn primary', type: 'submit' }, 'Включить вход'));
   };
+  // ---- обновление панели ----
+  const updBox = h('div', { class: 'card' });
+  let alive = true, updT = 0, applying = false;
+  const fmtTime = (t) => (t ? new Date(t * 1000).toLocaleString('ru-RU') : 'ещё не проверялось');
+  function drawUpd(u) {
+    S.update = u;
+    clear(updBox);
+    const j = u.job || {};
+    const busy = !!j.running || applying;
+    apd(updBox, h('h2', 'Обновление'),
+      h('dl', { class: 'kv' }, h('dt', 'Установлена'), h('dd', 'v' + String(u.current || '—').replace(/^v/, '')),
+        h('dt', 'Последняя версия'), h('dd', u.latest ? 'v' + u.latest : '—'),
+        h('dt', 'Проверено'), h('dd', fmtTime(u.checked_at))),
+      u.available ? note('ok', 'Доступна новая версия v' + u.latest + '.') : (u.latest ? note('', 'Установлена последняя версия.') : null),
+      u.reason ? note(u.available ? 'warn' : 'err', u.reason) : null,
+      j.error ? note('err', j.error) : null,
+      h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin:10px 0' },
+        h('button', { class: 'btn', disabled: busy, onclick: async () => {
+          try { drawUpd(await post('api/update/check')); } catch (x) { toastErr(x); }
+        } }, 'Проверить обновления'),
+        u.available && u.can_apply ? h('button', { class: 'btn primary', disabled: busy, onclick: async () => {
+          if (!(await confirmBox('Обновить панель до v' + u.latest + '? Ядро будет остановлено и запущено снова, страница перезагрузится.', 'Обновить'))) return;
+          try { applying = true; drawUpd(await post('api/update/apply')); watch(u.current); } catch (x) { applying = false; toastErr(x); }
+        } }, 'Обновить до v' + u.latest) : null,
+        u.page_url ? h('a', { class: 'btn ghost', href: u.page_url, target: '_blank', rel: 'noopener noreferrer' }, 'Что нового') : null),
+      chk(S.settings.update, 'auto', 'Автообновление', 'Раз в несколько часов панель проверяет релизы на GitHub и сама ставит новую версию (ядро при этом ненадолго перезапускается). По умолчанию выключено. Сохраните настройки, чтобы изменение вступило в силу.'),
+      (j.running || (j.output && j.output.length)) ? h('pre', { class: 'mono', style: 'max-height:200px;overflow:auto;white-space:pre-wrap;margin-top:10px' }, (j.output || []).join('\n')) : null);
+  }
+  // после замены файла панель перезапускается: ждём, пока она снова ответит с новой версией
+  function watch(prevVersion) {
+    clearTimeout(updT);
+    const tick = async () => {
+      if (!alive) return;
+      try {
+        const u = await get('api/update');
+        if (u.current && u.current !== prevVersion) { toast('Панель обновлена до v' + u.current, 'ok'); setTimeout(() => location.reload(), 600); return; }
+        if (u.job && u.job.finished && u.job.error) { applying = false; drawUpd(u); return; }
+        drawUpd(u);
+      } catch (x) { /* панель перезапускается */ }
+      updT = setTimeout(tick, 1500);
+    };
+    updT = setTimeout(tick, 1500);
+  }
+  get('api/update').then(async (u) => {
+    if (!alive) return;
+    drawUpd(u);
+    if (!u.checked_at && !(u.job && u.job.running)) { const c = await post('api/update/check'); if (alive) drawUpd(c); }
+  }).catch(() => {});
+
   apd(root, pageHead('Система', 'Параметры самой панели'),
     h('div', { class: 'card' }, h('h2', 'О панели'), h('dl', { class: 'kv' },
       h('dt', 'Версия'), h('dd', (S.system && S.system.panel_version) || '—'), h('dt', 'Вход'), h('dd', S.session && S.session.auth_enabled ? 'по паролю root' : 'без пароля (только из локальной сети)'),
       h('dt', 'Каталог данных'), h('dd', { class: 'mono' }, (S.system && S.system.platform && S.system.platform.data_dir) || '—'))),
+    updBox,
     h('div', { class: 'cols' },
       authCard(),
       h('div', { class: 'card' }, h('h2', 'Адрес панели'),
@@ -47,4 +97,5 @@ export default async function (root) {
           try { await post('api/logout'); } catch (x) { /* всё равно выходим */ }
           location.hash = ''; location.reload();
         } }, 'Выйти'))));
+  return () => { alive = false; clearTimeout(updT); };
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"corepanel/internal/server"
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
+	"corepanel/internal/updater"
 )
 
 var version = "dev"
@@ -90,7 +92,29 @@ func run(args []string) {
 	sup := supervisor.New(info, inst, st.Get)
 	srv := server.New(version, info, st, sup, inst)
 
-	if st.Get().Autostart {
+	srv.Updater.Restart = func() error {
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if r, e := filepath.EvalSymlinks(exe); e == nil {
+			exe = r
+		}
+		// запомнить, что ядро работало, и вернуть его после перезапуска
+		if sup.Status().State == "running" {
+			_ = os.WriteFile(filepath.Join(info.DataDir, updater.ResumeMarker), []byte("1"), 0o600)
+		}
+		_ = sup.Stop()
+		return updater.Reexec(exe)
+	}
+	go srv.Updater.AutoLoop(context.Background())
+
+	resume := false
+	if _, err := os.Stat(filepath.Join(info.DataDir, updater.ResumeMarker)); err == nil {
+		resume = true
+		_ = os.Remove(filepath.Join(info.DataDir, updater.ResumeMarker))
+	}
+	if st.Get().Autostart || resume {
 		go func() {
 			if err := sup.Start(st.Get()); err != nil {
 				sup.Logs.Add("[panel] автозапуск не удался: " + err.Error())
