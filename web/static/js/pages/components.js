@@ -4,23 +4,21 @@ import * as st from '../state.js';
 
 const S = st.S;
 const CORES = {
-  singbox: { name: 'sing-box', tag: 'Универсальное и экономное ядро', chips: ['sniff и rule-set', 'WireGuard', 'TUN auto_redirect', 'Reality, Hysteria2, TUIC'], pkg: true },
-  mihomo: { name: 'Mihomo', tag: 'Clash.Meta с богатыми группами', chips: ['fallback и load-balance', 'Clash-дашборды', 'fake-ip', 'правила .mrs'], pkg: true },
+  mihomo: { name: 'Mihomo', tag: 'Clash.Meta с богатыми группами', chips: ['fallback и load-balance', 'Clash-дашборды', 'fake-ip', 'правила .mrs'], pkg: true, blocked: true },
   amnezia: { name: 'amnezia-box', tag: 'sing-box с AmneziaWG: обход блокировок WireGuard', chips: ['всё из sing-box', 'AmneziaWG', 'сжатая сборка'], pkg: false },
 };
-const ORDER = ['singbox', 'mihomo', 'amnezia'];
+const ORDER = ['mihomo', 'amnezia'];
 
 export default async function (root) {
   const s = S.settings;
   let alive = true, pollT = 0;
   const meterBox = h('div');
   const coreRows = h('div');
-  const podkopBox = h('div');
   const depBox = h('div');
   let depT = 0;
   const jobBox = h('div');
-  apd(root, pageHead('Компоненты', 'Ядра sing-box, Mihomo и amnezia-box, а также Podkop: установка, удаление и выбор активного ядра'),
-    h('div', { class: 'bay' }, meterBox, coreRows, podkopBox, depBox), jobBox);
+  apd(root, pageHead('Компоненты', 'Ядро amnezia-box: установка, обновление и удаление. Установка Mihomo заблокирована'),
+    h('div', { class: 'bay' }, meterBox, coreRows, depBox), jobBox);
 
   // Хватает ли места под установку: свободное место + размер уже стоящей копии (она заменится).
   function space(id) {
@@ -35,7 +33,7 @@ export default async function (root) {
     const sg = (S.system && S.system.storage) || {};
     const need = sg.need_mb || {};
     const free = sg.free_mb == null ? 0 : sg.free_mb;
-    const marks = ORDER.map((id) => [CORES[id].name, need[id] || 0]).concat([['Podkop', pk.need || 20]]).filter((m) => m[1] > 0);
+    const marks = ORDER.map((id) => [CORES[id].name, need[id] || 0]).filter((m) => m[1] > 0);
     const scale = Math.max(...marks.map((m) => m[1])) * 1.25; // шкала по самому большому компоненту; больше свободного места — заполнено целиком
     const fill = h('i'); fill.style.width = Math.min(100, free / scale * 100) + '%';
     const track = h('div', { class: 'meter-track', role: 'img', 'aria-label': 'Свободно ' + free + ' МБ' }, fill);
@@ -58,19 +56,22 @@ export default async function (root) {
     for (const id of ORDER) {
       const c = CORES[id], info = cores[id] || {};
       const sel = s.core === id;
+      const blocked = !!c.blocked;
       const sp = space(id);
-      const lack = !sp.ok;
+      const lack = !sp.ok && !c.blocked;
       const btn = h('button', { class: 'btn primary' + (lack ? ' lowspace' : ''), disabled: lack, title: lack ? 'Не хватает места' : null, onclick: (e) => { e.stopPropagation(); install(id, ''); } }, info.installed ? 'Обновить' : 'Установить');
-      const pkgBtn = c.pkg ? h('button', { class: 'btn', title: 'Пакет из репозитория OpenWrt/Entware (opkg или apk): обычно компактнее релиза GitHub.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы') : null;
+      if (blocked) { btn.disabled = true; btn.title = 'Установка заблокирована'; btn.classList.remove('lowspace'); }
+      const pkgBtn = c.pkg ? h('button', { class: 'btn', disabled: blocked, title: 'Пакет из репозитория OpenWrt/Entware (opkg или apk): обычно компактнее релиза GitHub.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы') : null;
       const delBtn = h('button', { class: 'btn danger', onclick: async (e) => { e.stopPropagation(); remove(id); } }, 'Удалить');
-      const pick = h('input', { type: 'radio', name: 'core', checked: sel, 'aria-label': 'Использовать ' + c.name, onchange: () => { s.core = id; st.touch(); draw(); } });
-      coreRows.append(h('div', { class: 'mod' + (sel ? ' on' : ''), onclick: (e) => { if (e.target.closest('button,input,label,details')) return; pick.click(); } },
+      const pick = h('input', { type: 'radio', name: 'core', checked: sel, disabled: blocked, 'aria-label': 'Использовать ' + c.name, onchange: () => { s.core = id; st.touch(); draw(); } });
+      coreRows.append(h('div', { class: 'mod' + (sel ? ' on' : '') + (blocked ? ' blocked' : ''), onclick: (e) => { if (blocked || e.target.closest('button,input,label,details')) return; pick.click(); } },
         h('div', { class: 'mod-head' }, h('label', { class: 'mod-name' }, pick, h('b', c.name)),
           h('span', { class: 'mod-tag' }, c.tag), h('span', { class: 'grow' }),
-          sel ? badge('активно', 'acc') : null, info.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn')),
+          blocked ? badge('заблокировано', 'err') : null, sel ? badge('активно', 'acc') : null, info.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn')),
         h('div', { class: 'chips' }, c.chips.map((x) => h('span', x))),
         h('div', { class: 'mod-meta mono small' }, info.installed ? [h('span', 'v' + (info.version || '?').replace(/^v/, '')), h('span', info.path)] : [h('span', 'нужно около ' + (sp.need || '?') + ' МБ')]),
-        lack ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Скачанный файл при нехватке места удаляется. Подключите накопитель и укажите каталог установки ниже' + (c.pkg ? ' либо поставьте ядро «Из пакетов системы».' : '.')) : null,
+        (lack && !blocked) ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Скачанный файл при нехватке места удаляется. Подключите накопитель и укажите каталог установки ниже' + (c.pkg ? ' либо поставьте ядро «Из пакетов системы».' : '.')) : null,
+        blocked ? note('', 'Установка Mihomo заблокирована в этой сборке панели.') : null,
         h('div', { class: 'mod-act' }, btn, pkgBtn, info.installed ? delBtn : null)));
     }
   }
@@ -114,58 +115,6 @@ export default async function (root) {
       h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(j.percent || 0) }, bar)));
   }
 
-  // ---------- Podkop ----------
-  let pkT = 0;
-  const pk = { need: 20 };
-  async function pkAct(name, confirmText) {
-    if (confirmText && !(await confirmBox(confirmText, 'Продолжить', name === 'remove'))) return;
-    try { await post('api/podkop/' + name); toast('Готово', 'ok'); } catch (e) { toastErr(e); }
-    pkLoad();
-  }
-  async function pkLoad() {
-    clearTimeout(pkT);
-    let p;
-    try { p = await get('api/podkop'); } catch (e) { if (alive) clear(podkopBox).append(h('div', { class: 'mod' }, h('b', 'Podkop'), note('err', e.message))); return; }
-    if (!alive) return;
-    pk.need = p.need_mb || 20; if (alive) drawMeter();
-    const busy = p.job && p.job.running;
-    const force = !!(s.download && s.download.force_install);
-    const lack = p.supported && !p.installed && p.free_mb > 0 && p.free_mb < p.need_mb;
-    const blocked = lack && !force;
-    const kids = [h('div', { class: 'mod-head' }, h('span', { class: 'mod-name' }, h('b', 'Podkop')),
-      h('span', { class: 'mod-tag' }, 'Маршрутизация по спискам на базе sing-box для OpenWrt'), h('span', { class: 'grow' }),
-      p.installed ? (p.running ? badge('работает', 'ok') : badge('остановлен')) : null,
-      p.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn'))];
-    if (!p.supported) kids.push(h('p', { class: 'small mute' }, p.reason));
-    else {
-      kids.push(h('div', { class: 'chips' }, ['OpenWrt 24.10+', 'свои списки доменов', 'управляет sing-box и dnsmasq', 'не работает вместе с ядром панели'].map((x) => h('span', x))));
-      kids.push(h('div', { class: 'mod-meta mono small' }, p.installed
-        ? [h('span', 'v' + (p.version || '?').replace(/^v/, '')), h('span', 'свободно ' + p.free_mb + ' МБ')]
-        : [h('span', 'нужно от ' + p.need_mb + ' МБ, свободно ' + p.free_mb + ' МБ')]));
-      if (lack) kids.push(note('warn', force
-        ? 'Места меньше рекомендованного (' + p.free_mb + ' из ' + p.need_mb + ' МБ), но включена принудительная установка: при неудаче всё установленное будет удалено.'
-        : 'Не хватает места: свободно ' + p.free_mb + ' МБ, нужно не меньше ' + p.need_mb + ' МБ (на устройствах с флеш-памятью 16 МБ Podkop не поддерживается). Освободите место, подключите extroot или включите «Принудительная установка» в настройках ниже и сохраните их.'));
-      kids.push(p.installed
-        ? h('div', { class: 'mod-act' },
-          h('button', { class: 'btn primary', disabled: busy, onclick: () => pkAct('start') }, 'Запустить'),
-          h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('restart') }, 'Перезапустить'),
-          h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('stop') }, 'Остановить'),
-          h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('enable') }, 'В автозапуск'),
-          h('button', { class: 'btn', disabled: busy, onclick: () => pkAct('disable') }, 'Убрать из автозапуска'),
-          h('button', { class: 'btn danger', disabled: busy, onclick: () => pkAct('remove', 'Остановить и удалить Podkop (пакеты podkop, luci-app-podkop, luci-i18n-podkop-ru)?') }, 'Удалить'))
-        : h('div', { class: 'mod-act' + (blocked ? ' lowspace' : '') },
-          h('button', { class: 'btn primary', disabled: busy || blocked, onclick: () => pkAct('install', 'Скачать последний релиз Podkop с GitHub (itdoginfo/podkop) и установить пакет podkop? Зависимости (sing-box и др.) подтянутся из репозиториев роутера.' + (force ? ' Включена принудительная установка: при неудаче всё установленное будет удалено.' : '')) }, force && lack ? 'Установить принудительно' : 'Установить')));
-      if (p.job && (p.job.running || p.job.finished)) {
-        const pre = h('pre', { class: 'mono', style: 'max-height:300px;overflow:auto;white-space:pre-wrap;margin-top:10px' }, (p.job.output || []).join('\n'));
-        kids.push(h('div', { class: 'small', style: 'margin-top:10px' }, h('b', p.job.title || 'Операция')),
-          p.job.error ? note('err', p.job.error) : (p.job.finished ? note('ok', 'Завершено') : h('p', { class: 'mute' }, h('span', { class: 'spin' }), 'Выполняется…')), pre);
-        setTimeout(() => { pre.scrollTop = pre.scrollHeight; }, 0);
-      }
-    }
-    clear(podkopBox).append(h('div', { class: 'mod' }, kids));
-    if (busy && alive) pkT = setTimeout(pkLoad, 1500);
-  }
-
   async function depLoad() {
     clearTimeout(depT);
     let k;
@@ -182,7 +131,7 @@ export default async function (root) {
       h('div', { class: 'chips' }, have.length ? have.map((p) => h('span', p + ' — ' + (why[p] || ''))) : [h('span', 'ничего не установлено')]),
       h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;margin-top:10px' },
         h('button', { class: 'btn danger', disabled: !have.length || !!j.running, onclick: async () => {
-          if (!(await confirmBox('Удалить ' + have.join(', ') + '? Режимы TUN и tproxy перестанут работать, пока пакеты не будут установлены снова (страница «Входящие, TUN, сеть»). Удалятся только эти пакеты, ядра и Podkop не затрагиваются.', 'Удалить', true))) return;
+          if (!(await confirmBox('Удалить ' + have.join(', ') + '? Режимы TUN и tproxy перестанут работать, пока пакеты не будут установлены снова (страница «Входящие, TUN, сеть»). Удалятся только эти пакеты. Ядро не затрагивается.', 'Удалить', true))) return;
           try { await post('api/kmods/remove'); toast('Удаляю…', 'ok'); } catch (e) { toastErr(e); }
           depLoad();
         } }, j.running ? 'Выполняется…' : 'Удалить зависимые компоненты')),
@@ -192,7 +141,6 @@ export default async function (root) {
   }
 
   draw();
-  pkLoad();
   depLoad();
   get('api/core/job').then((j) => { if (j && j.running) poll(); else drawJob(j && j.finished && j.error ? j : null); }).catch(() => {});
 
@@ -206,11 +154,8 @@ export default async function (root) {
         field('Зеркало GitHub', txt(d, 'mirror', { ph: 'https://ghfast.top/' }), 'Префикс, который добавляется перед ссылкой на GitHub. Используется для ядер и наборов правил.'),
         field('HTTP-прокси для загрузок', txt(d, 'proxy', { ph: 'http://127.0.0.1:7890' }), 'Например, mixed-порт уже работающего ядра или другого прокси. Формат: http(s)://host:port.'),
         field('Каталог установки ядер', txt(d, 'bin_dir', { ph: (S.system && S.system.platform && S.system.platform.bin_dir) || '/opt/bin' }), 'Куда класть бинарники. Пусто — каталог по умолчанию для платформы. На роутерах с малой флеш-памятью выбирайте внешний накопитель.'),
-        field('Свой бинарник sing-box', txt(d, 'singbox_path', { ph: '/opt/bin/sing-box' }), 'Если указан, используется он, а не скачанный панелью. Полезно для сборок с нужными тегами.'),
-        field('Свой бинарник Mihomo', txt(d, 'mihomo_path', { ph: '/opt/bin/mihomo' })),
         field('Свой бинарник amnezia-box', txt(d, 'amnezia_path', { ph: '/opt/bin/amnezia-box' }))),
-      chk(d, 'force_install', 'Принудительная установка Podkop', 'Ставить Podkop, даже если свободного места меньше 25 МБ. Если установка не удалась, всё скачанное и установленное в этой попытке удаляется. Вступает в силу после сохранения настроек.', { onchange: () => pkLoad() }),
       h('div', { class: 'row' }, h('p', { class: 'small mute grow' }, 'Изменения вступают в силу после сохранения настроек. Свободное место считается по сохранённому каталогу.'),
-        h('button', { class: 'btn', onclick: async () => { try { await st.loadSystem(); draw(); pkLoad(); toast('Место пересчитано', 'ok'); } catch (e) { toastErr(e); } } }, 'Пересчитать место'))));
-  return () => { alive = false; clearTimeout(pollT); clearTimeout(pkT); clearTimeout(depT); };
+        h('button', { class: 'btn', onclick: async () => { try { await st.loadSystem(); draw(); toast('Место пересчитано', 'ok'); } catch (e) { toastErr(e); } } }, 'Пересчитать место'))));
+  return () => { alive = false; clearTimeout(pollT); clearTimeout(depT); };
 }

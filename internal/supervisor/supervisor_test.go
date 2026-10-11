@@ -24,7 +24,7 @@ case "$1" in
   run) ` + runBody + `;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(bin, "sing-box"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "amnezia-box"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	info := platform.Info{OS: platform.Linux, DataDir: filepath.Join(dir, "data"), BinDir: bin}
@@ -51,7 +51,7 @@ func TestStartStop(t *testing.T) {
 	if !strings.Contains(strings.Join(sup.Logs.Tail(10), "\n"), "hello from core") {
 		t.Errorf("лог ядра не попал в буфер: %v", sup.Logs.Tail(10))
 	}
-	if _, err := os.Stat(filepath.Join(sup.RuntimeDir("singbox"), "config.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(sup.RuntimeDir("amnezia"), "config.json")); err != nil {
 		t.Error("конфиг не записан:", err)
 	}
 	if err := sup.Stop(); err != nil {
@@ -76,7 +76,7 @@ func TestImmediateCrashReported(t *testing.T) {
 func TestConfigRejectedByCore(t *testing.T) {
 	sup, set := fakeCore(t, `sleep 5`)
 	// подменяем check на отказ
-	p := filepath.Join(sup.Info.BinDir, "sing-box")
+	p := filepath.Join(sup.Info.BinDir, "amnezia-box")
 	b, _ := os.ReadFile(p)
 	os.WriteFile(p, []byte(strings.Replace(string(b), "check) exit 0;;", `check) echo "bad outbound" ; exit 1;;`, 1)), 0o755)
 	err := sup.Start(set)
@@ -87,7 +87,7 @@ func TestConfigRejectedByCore(t *testing.T) {
 
 func TestNotInstalled(t *testing.T) {
 	sup, set := fakeCore(t, `sleep 1`)
-	os.Remove(filepath.Join(sup.Info.BinDir, "sing-box"))
+	os.Remove(filepath.Join(sup.Info.BinDir, "amnezia-box"))
 	set.Download.Mirror = ""
 	if err := sup.Start(set); err == nil || !strings.Contains(err.Error(), "не установлено") {
 		// допускаем, что в PATH окажется настоящий sing-box

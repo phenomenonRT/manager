@@ -15,7 +15,7 @@ func TestSettingsRoundTripAndBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := st.Get()
-	s.Core = model.CoreMihomo
+	s.Core = model.CoreAmnezia
 	s.Nodes = []model.Node{{Name: "a", Type: "socks", Server: "1.1.1.1", Port: 1080}}
 	if err := st.Set(s); err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestSettingsRoundTripAndBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := st2.Get()
-	if got.Core != model.CoreMihomo || got.Final != "a" || len(got.Nodes) != 1 {
+	if got.Core != model.CoreAmnezia || got.Final != "a" || len(got.Nodes) != 1 {
 		t.Errorf("не сохранилось: %+v", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "settings.json.bak")); err != nil {

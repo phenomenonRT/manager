@@ -14,7 +14,7 @@ export function normalize(s) {
   for (const k of ['nodes', 'groups', 'rule_sets', 'rules']) arr(s, k);
   arr(s.dns, 'rules'); arr(s.tun, 'exclude_cidr');
   for (const k of ['lan_ifaces', 'include', 'exclude', 'bypass_dst']) arr(s.firewall, k);
-  if (!s.core) s.core = 'singbox';
+  if (s.core !== 'amnezia') s.core = 'amnezia';
   if (!s.final) s.final = 'direct';
   for (const g of s.groups) arr(g, 'members');
   return s;
@@ -36,7 +36,7 @@ export async function loadSettings() {
 }
 export async function loadSystem() { S.system = await get('api/system'); emit(); return S.system; }
 export async function loadStatus() { S.status = await get('api/status'); emit(); return S.status; }
-export const CORE_NAME = { singbox: 'sing-box', mihomo: 'Mihomo', amnezia: 'amnezia-box' };
+export const CORE_NAME = { mihomo: 'Mihomo', amnezia: 'amnezia-box' };
 export const coreName = (c) => CORE_NAME[c] || c || '';
 // sing-box и его форк amnezia-box читают один и тот же формат конфига.
 export const isSb = (c) => c === 'singbox' || c === 'amnezia';

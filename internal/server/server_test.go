@@ -71,17 +71,17 @@ func TestAuthAndSettings(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &set); err != nil {
 		t.Fatal(err)
 	}
-	set["core"] = "mihomo"
+	set["core"] = "mihomo" // будет заменено на amnezia: Mihomo заблокирован
 	b, _ := json.Marshal(set)
 	if r, out := do(t, c, "PUT", ts.URL+"/api/settings", string(b)); r.StatusCode != 200 {
 		t.Fatalf("PUT settings: %d %s", r.StatusCode, out)
 	}
 	_, body = do(t, c, "GET", ts.URL+"/api/settings", "")
-	if !strings.Contains(body, `"core":"mihomo"`) {
+	if !strings.Contains(body, `"core":"amnezia"`) {
 		t.Fatalf("настройки не сохранились: %s", body)
 	}
 	r, out := do(t, c, "POST", ts.URL+"/api/render", body)
-	if r.StatusCode != 200 || !strings.Contains(out, "config.yaml") {
+	if r.StatusCode != 200 || !strings.Contains(out, "config.json") {
 		t.Fatalf("render: %d %s", r.StatusCode, out)
 	}
 	for _, kind := range []string{"wireguard", "reality", "uuid"} {
@@ -130,19 +130,15 @@ func TestSessionSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestPodkopStatusAndGuard(t *testing.T) {
+func TestCoreInstallBlocked(t *testing.T) {
 	ts, _ := newTest(t)
 	jar, _ := cookiejarNew()
 	c := &http.Client{Jar: jar}
-	r, out := do(t, c, "GET", ts.URL+"/api/podkop", "")
-	if r.StatusCode != 200 || !strings.Contains(out, `"supported":false`) {
-		t.Fatalf("не-OpenWrt должен возвращать supported=false: %d %s", r.StatusCode, out)
+	if r, _ := do(t, c, "POST", ts.URL+"/api/core/install", `{"core":"mihomo"}`); r.StatusCode != 403 {
+		t.Fatalf("установка Mihomo должна быть заблокирована: %d", r.StatusCode)
 	}
-	if r, _ := do(t, c, "POST", ts.URL+"/api/podkop/install", "{}"); r.StatusCode != 400 {
-		t.Fatalf("установка вне OpenWrt должна отказывать: %d", r.StatusCode)
-	}
-	if r, _ := do(t, c, "POST", ts.URL+"/api/podkop/bogus", "{}"); r.StatusCode != 400 {
-		t.Fatalf("неизвестное действие: %d", r.StatusCode)
+	if r, _ := do(t, c, "POST", ts.URL+"/api/core/install", `{"core":"singbox"}`); r.StatusCode != 400 {
+		t.Fatalf("sing-box убран из проекта: %d", r.StatusCode)
 	}
 }
 

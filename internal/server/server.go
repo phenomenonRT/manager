@@ -29,7 +29,6 @@ import (
 	"corepanel/internal/kmods"
 	"corepanel/internal/model"
 	"corepanel/internal/platform"
-	"corepanel/internal/podkop"
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
 	"corepanel/internal/sysauth"
@@ -44,7 +43,6 @@ type Server struct {
 	St      *store.Store
 	Sup     *supervisor.Supervisor
 	Inst    *installer.Installer
-	Podkop  *podkop.Manager
 	Kmods   *kmods.Manager
 
 	mu    sync.Mutex
@@ -58,7 +56,7 @@ type failure struct {
 }
 
 func New(version string, info platform.Info, st *store.Store, sup *supervisor.Supervisor, inst *installer.Installer) *Server {
-	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Podkop: podkop.New(info), Kmods: kmods.New(info),
+	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Kmods: kmods.New(info),
 		key: loadKey(st.Dir()), fails: map[string]*failure{}}
 }
 
@@ -145,8 +143,6 @@ func (s *Server) Handler() http.Handler {
 	api("GET", "firewall/preview", s.fwPreview, true)
 	api("GET", "logs", s.logs, true)
 	api("GET", "logs/stream", s.logStream, true)
-	api("GET", "podkop", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Podkop.Status(r.Context())) }, true)
-	api("POST", "podkop/{action}", s.podkopAction, true)
 	api("GET", "kmods", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Kmods.Check()) }, true)
 	api("POST", "kmods/remove", func(w http.ResponseWriter, r *http.Request) {
 		if started, why := s.Kmods.Remove(); !started {
@@ -383,7 +379,7 @@ type coreInfo struct {
 func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 	set := s.St.Get()
 	cores := map[string]coreInfo{}
-	for _, c := range []string{model.CoreSingbox, model.CoreMihomo, model.CoreAmnezia} {
+	for _, c := range []string{model.CoreMihomo, model.CoreAmnezia} {
 		ci := coreInfo{}
 		if p := s.Inst.Locate(c, set.Download); p != "" {
 			ci.Installed, ci.Path = true, p
@@ -395,12 +391,12 @@ func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 	}
 	binDir := s.Inst.BinDir(set.Download)
 	installed := map[string]int{}
-	for _, c := range []string{model.CoreSingbox, model.CoreMihomo, model.CoreAmnezia} {
+	for _, c := range []string{model.CoreMihomo, model.CoreAmnezia} {
 		installed[c] = s.Inst.InstalledMB(c, set.Download)
 	}
 	ok(w, map[string]any{"panel_version": s.Version, "platform": s.Info, "cores": cores,
 		"listen":  s.St.PanelInfo().Listen,
-		"storage": map[string]any{"dir": binDir, "free_mb": platform.FreeMB(binDir), "need_mb": installer.NeedMB, "installed_mb": installed}})
+		"storage": map[string]any{"dir": binDir, "free_mb": platform.FreeMB(binDir), "need_mb": map[string]int{model.CoreMihomo: installer.NeedMB[model.CoreMihomo], model.CoreAmnezia: installer.NeedMB[model.CoreAmnezia]}, "installed_mb": installed}})
 }
 
 func (s *Server) interfaces(w http.ResponseWriter, r *http.Request) {
@@ -504,10 +500,6 @@ func (s *Server) svc(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		set := s.St.Get()
 		var err error
-		if (action == "start" || action == "restart") && podkop.IsRunning(r.Context()) {
-			fail(w, 409, "Работает Podkop: он тоже управляет sing-box, DNS и правилами nft, одновременно с ядром панели их запускать нельзя. Остановите Podkop на странице «Podkop».")
-			return
-		}
 		switch action {
 		case "start":
 			err = s.Sup.Start(set)
@@ -529,8 +521,12 @@ func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.Core != model.CoreSingbox && in.Core != model.CoreMihomo && in.Core != model.CoreAmnezia {
-		fail(w, 400, "core: singbox, mihomo или amnezia")
+	if in.Core == model.CoreMihomo {
+		fail(w, 403, "Установка Mihomo заблокирована")
+		return
+	}
+	if in.Core != model.CoreAmnezia {
+		fail(w, 400, "core: поддерживается только amnezia")
 		return
 	}
 	var err error
@@ -742,30 +738,4 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	rp.ServeHTTP(w, r)
-}
-
-// ---------- Podkop ----------
-
-func (s *Server) podkopAction(w http.ResponseWriter, r *http.Request) {
-	var err error
-	switch a := r.PathValue("action"); a {
-	case "install":
-		err = s.Podkop.Install(s.St.Get().Download.ForceInstall)
-	case "remove":
-		err = s.Podkop.Remove()
-	case "start", "restart":
-		// Podkop и ядро панели перехватывают DNS и трафик — вместе не запускаем.
-		if st := s.Sup.Status(); st.State == "running" {
-			fail(w, 409, "Сейчас работает ядро панели. Остановите его на странице «Обзор», затем запускайте Podkop.")
-			return
-		}
-		_, err = s.Podkop.Control(r.Context(), a)
-	default:
-		_, err = s.Podkop.Control(r.Context(), a)
-	}
-	if err != nil {
-		fail(w, 400, err.Error())
-		return
-	}
-	ok(w, s.Podkop.Status(r.Context()))
 }

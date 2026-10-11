@@ -213,15 +213,13 @@ type Download struct {
 	MihomoPath  string `json:"mihomo_path"`
 	AmneziaPath string `json:"amnezia_path"`
 	BinDir      string `json:"bin_dir"` // куда устанавливать ядра
-	// ForceInstall — ставить Podkop, даже если места меньше рекомендованного; при неудаче установка откатывается.
-	ForceInstall bool `json:"force_install"`
 }
 
 // Default возвращает настройки «из коробки».
 func Default() *Settings {
 	return &Settings{
 		Version: 1,
-		Core:    CoreSingbox,
+		Core:    CoreAmnezia,
 		General: General{
 			LogLevel: "warn", AllowLAN: true, BypassLAN: true, Sniff: true,
 			Controller: "127.0.0.1:9090", UpdateVia: "direct", TCPConcurrent: true,
@@ -242,7 +240,7 @@ func Default() *Settings {
 // Normalize подставляет значения по умолчанию в пустые поля (после загрузки JSON).
 func (s *Settings) Normalize() {
 	d := Default()
-	if s.Core != CoreSingbox && s.Core != CoreMihomo && s.Core != CoreAmnezia {
+	if s.Core != CoreAmnezia { // sing-box убран из проекта, Mihomo заблокирован
 		s.Core = d.Core
 	}
 	if s.General.LogLevel == "" {
