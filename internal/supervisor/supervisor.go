@@ -107,6 +107,8 @@ type Supervisor struct {
 	restarts  int
 	waitNet   bool // ядро не стартовало из-за отсутствия сети: повторяем запуск без красной ошибки
 	netLoop   bool
+	waitSince time.Time
+	waitWhy   string
 	warnings  []string
 	version   string
 	getSet    func() *model.Settings
@@ -188,6 +190,27 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	if bin == "" {
 		return fmt.Errorf("ядро %s не установлено — установите его в разделе «Компоненты»", installer.BinName(set.Core))
 	}
+	// проверка готовности: ждём WAN и интерфейсы системных VPN, а не запускаем ядро «вслепую»
+	if reasons, hard := preflight(set); len(reasons) > 0 {
+		if !s.waitNet {
+			s.waitSince = time.Now()
+		}
+		limit := 60 * time.Second // системный VPN может не подняться вовсе — не держим ядро вечно
+		if hard {
+			limit = 10 * time.Minute
+		}
+		why := strings.Join(reasons, "; ")
+		if time.Since(s.waitSince) < limit {
+			s.desired, s.lastErr, s.waitNet, s.waitWhy = false, "", true, why
+			if !s.netLoop {
+				s.Logs.Add("[panel] ждём перед запуском: " + why + " (проверка каждые 10 с)")
+				s.netLoop = true
+				go s.waitNetwork()
+			}
+			return nil
+		}
+		s.Logs.Add("[panel] запускаю, не дожидаясь: " + why)
+	}
 	if set.Tun.Enabled {
 		if err := ensureTun(); err != nil {
 			s.lastErr = err.Error()
@@ -265,7 +288,7 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 		tail := strings.Join(s.Logs.Tail(6), "\n")
 		if networkNotReady(tail) {
 			// интернета (маршрута по умолчанию) пока нет, например сразу после загрузки роутера
-			s.desired, s.lastErr, s.waitNet = false, "", true
+			s.desired, s.lastErr, s.waitNet, s.waitWhy = false, "", true, "нет маршрута в интернет"
 			s.Logs.Add("[panel] нет маршрута в интернет — это не сбой: запуск будет повторяться каждые 10 с, пока не появится сеть")
 			if !s.netLoop {
 				s.netLoop = true
@@ -435,7 +458,11 @@ func (s *Supervisor) Status() Status {
 		st.UptimeSec = int64(time.Since(s.startedAt).Seconds())
 	} else if s.waitNet {
 		st.State = "waiting"
-		st.Notice = "Ждём подключения к интернету (нет маршрута по умолчанию). Ядро запустится само, как только сеть появится."
+		why := s.waitWhy
+		if why == "" {
+			why = "нет маршрута по умолчанию"
+		}
+		st.Notice = "Ждём готовности системы: " + why + ". Ядро запустится само, как только это появится."
 	} else if s.lastErr != "" {
 		st.State = "failed"
 	}
