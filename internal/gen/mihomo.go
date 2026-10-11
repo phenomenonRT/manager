@@ -115,6 +115,8 @@ func mhLogLevel(l string) string {
 		return "warning"
 	case "debug", "info", "error", "silent":
 		return l
+	case "none":
+		return "silent"
 	}
 	return "warning"
 }

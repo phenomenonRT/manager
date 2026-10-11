@@ -16,7 +16,11 @@ func Singbox(s *model.Settings) (*Result, error) {
 	res := &Result{Core: model.CoreSingbox, Filename: "config.json"}
 	root := NewO()
 
-	root.Set("log", NewO().Set("level", sbLogLevel(s.General.LogLevel)).Set("timestamp", true))
+	if s.General.LogLevel == "none" { // «без логов»
+		root.Set("log", NewO().Set("disabled", true))
+	} else {
+		root.Set("log", NewO().Set("level", sbLogLevel(s.General.LogLevel)).Set("timestamp", true))
+	}
 
 	if s.DNS.Enabled {
 		dns, err := sbDNS(s, p)

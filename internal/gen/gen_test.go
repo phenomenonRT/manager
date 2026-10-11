@@ -318,3 +318,24 @@ func TestAmneziaRuleSetHTTPClient(t *testing.T) {
 		t.Errorf("ожидался явный http_client:\n%s", c)
 	}
 }
+
+func TestLogNone(t *testing.T) {
+	s := model.Default()
+	s.General.LogLevel = "none"
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := string(res.Config)
+	if !strings.Contains(c, `"disabled": true`) || strings.Contains(c, `"timestamp"`) {
+		t.Errorf("sing-box: журнал не отключён: %s", c)
+	}
+	if mhLogLevel("none") != "silent" {
+		t.Errorf("mihomo: ожидался silent")
+	}
+	s.General.LogLevel = "warn"
+	res, _ = Singbox(s)
+	if strings.Contains(string(res.Config), `"disabled"`) {
+		t.Errorf("при warn журнал должен быть включён")
+	}
+}

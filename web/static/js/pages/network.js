@@ -49,7 +49,7 @@ export default async function (root) {
         field('Redirect', num(ib, 'redir_port', { min: 0, max: 65535 }), 'Порт для режима redirect (TCP).'),
         field('TProxy', num(ib, 'tproxy_port', { min: 0, max: 65535 }), 'Порт для режима tproxy (TCP+UDP).')),
       h('div', { class: 'card' }, h('h2', 'Общие'),
-        fgrid(field('Уровень логов', sel(g, 'log_level', ['debug', 'info', 'warn', 'error'])),
+        fgrid(field('Уровень логов', sel(g, 'log_level', [['debug', 'debug — всё подряд'], ['info', 'info'], ['warn', 'warn — предупреждения и ошибки'], ['error', 'error — только ошибки'], ['none', 'без логов']]), 'Сколько ядро пишет в журнал. «Без логов» полностью отключает журнал ядра: ошибок соединений в нём не будет, а на странице «Логи» будет пусто.'),
           field('Контроллер (Clash API)', txt(g, 'controller', { ph: '127.0.0.1:9090' }), 'Адрес API ядра. Через него панель показывает трафик и переключает узлы.'),
           field('Секрет API', pw(g, 'secret'), 'Пароль доступа к API ядра. Если контроллер доступен из LAN — обязательно задайте.'),
           field('Каталог дашборда', txt(g, 'external_ui', { ph: '/opt/share/zashboard' }), 'Папка с веб-дашбордом (zashboard, metacubexd), он откроется на порту контроллера.'),
