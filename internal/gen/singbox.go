@@ -300,7 +300,20 @@ func sbOutbounds(s *model.Settings, p *plan) ([]any, []any) {
 		switch g.Type {
 		case "selector":
 			o.Set("type", "selector").Set("outbounds", members)
-		case "fallback", "loadbalance", "urltest":
+		case "fallback":
+			// В sing-box нет отдельного fallback. urltest держит выбранный узел, пока его проверка
+			// проходит, если другой не быстрее больше чем на tolerance; при огромном допуске он
+			// никогда не переходит «на более быстрый», а после сбоя берёт первый живой узел по порядку.
+			// 60000 мс, а не 65535: ядро складывает задержку и допуск в uint16 — переполнение сломало бы условие.
+			iv := g.Interval
+			if iv <= 0 {
+				iv = 60
+			}
+			o.Set("type", "urltest").Set("outbounds", members).
+				Set("url", orDefault(g.URL, "https://www.gstatic.com/generate_204")).
+				Set("interval", durStr(iv)).
+				Set("tolerance", fallbackTolerance)
+		case "loadbalance", "urltest":
 			if g.Type != "urltest" {
 				p.warn("группа «%s»: тип %s в sing-box отсутствует — использован urltest", g.Name, g.Type)
 			}
@@ -316,6 +329,9 @@ func sbOutbounds(s *model.Settings, p *plan) ([]any, []any) {
 	}
 	return outs, eps
 }
+
+// fallbackTolerance — допуск urltest (мс), при котором выбранный узел не меняется на «более быстрый».
+const fallbackTolerance = 60000
 
 func orDefault(v, d string) string {
 	if v == "" {

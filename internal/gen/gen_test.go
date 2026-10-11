@@ -69,9 +69,12 @@ func TestSingboxJSONValid(t *testing.T) {
 	if len(sets) != 2 {
 		t.Errorf("ожидалось 2 rule_set (geosite+geoip), получено %d", len(sets))
 	}
-	// fallback → urltest с предупреждением
-	if !containsWarn(res.Warnings, "fallback") {
-		t.Errorf("нет предупреждения про fallback: %v", res.Warnings)
+	// fallback → urltest с огромным допуском, без предупреждения
+	if containsWarn(res.Warnings, "fallback") {
+		t.Errorf("fallback поддерживается, предупреждения быть не должно: %v", res.Warnings)
+	}
+	if !strings.Contains(res.Config, `"tolerance": 60000`) {
+		t.Errorf("у fallback нет допуска 60000: %s", res.Config)
 	}
 	if !strings.Contains(res.Config, `"type": "wireguard"`) {
 		t.Error("нет wireguard endpoint")
@@ -337,5 +340,29 @@ func TestLogNone(t *testing.T) {
 	res, _ = Singbox(s)
 	if strings.Contains(string(res.Config), `"disabled"`) {
 		t.Errorf("при warn журнал должен быть включён")
+	}
+}
+
+func TestSingboxFallbackOrder(t *testing.T) {
+	s := model.Default()
+	s.Nodes = []model.Node{
+		{Name: "a", Type: "shadowsocks", Server: "1.1.1.1", Port: 1, Method: "aes-128-gcm", Password: "x"},
+		{Name: "b", Type: "shadowsocks", Server: "2.2.2.2", Port: 2, Method: "aes-128-gcm", Password: "x"},
+	}
+	s.Groups = []model.Group{{Name: "fb", Type: "fallback", Members: []string{"a", "b"}}, {Name: "lb", Type: "loadbalance", Members: []string{"a", "b"}}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Config, `"tolerance": 60000`) == false || !strings.Contains(res.Config, `"interval": "1m"`) {
+		t.Errorf("fallback: нет допуска или интервала 1m: %s", res.Config)
+	}
+	if !containsWarn(res.Warnings, "loadbalance") {
+		t.Errorf("loadbalance должен давать предупреждение: %v", res.Warnings)
+	}
+	// порядок участников сохранён — от него зависит «первый рабочий»
+	i, j := strings.Index(res.Config, `"a",`), strings.Index(res.Config, `"b"`)
+	if i < 0 || j < 0 || i > j {
+		t.Errorf("порядок участников нарушен")
 	}
 }

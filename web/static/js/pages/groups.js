@@ -2,11 +2,11 @@ import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, num, sel, toas
 import * as st from '../state.js';
 
 const S = st.S;
-const GTYPES = [['selector', 'selector — выбор вручную'], ['urltest', 'urltest — самый быстрый'], ['fallback', 'fallback — первый доступный (Mihomo)'], ['loadbalance', 'loadbalance — распределение (Mihomo)']];
+const GTYPES = [['selector', 'selector — выбор вручную'], ['urltest', 'urltest — самый быстрый'], ['fallback', 'fallback — первый рабочий'], ['loadbalance', 'loadbalance — распределение (Mihomo)']];
 const TYPE_HELP = {
   selector: 'Вы сами выбираете узел на странице «Обзор» (или в дашборде ядра).',
   urltest: 'Ядро периодически проверяет задержку и выбирает самый быстрый узел.',
-  fallback: 'Использует первый по порядку доступный узел; при сбое переходит к следующему.',
+  fallback: 'Берёт первый по порядку рабочий узел и работает с ним, пока он не откажет. После сбоя переходит к следующему рабочему и на прежний сам не возвращается. Порядок участников задаёт приоритет.',
   loadbalance: 'Распределяет соединения между узлами группы.',
 };
 
@@ -18,8 +18,8 @@ export default async function (root) {
   function taken(except) { return new Set([...s.nodes.map((n) => n.name), ...s.groups.map((g) => g.name), 'direct', 'block'].filter((x) => x !== except)); }
 
   function draw() {
-    clear(top).append(st.isSb(s.core) && s.groups.some((g) => g.type === 'fallback' || g.type === 'loadbalance')
-      ? note('warn', 'В sing-box нет групп fallback и loadbalance — они будут заменены на urltest (генератор покажет это в предупреждениях). Для полной поддержки выберите Mihomo.') : '');
+    clear(top).append(st.isSb(s.core) && s.groups.some((g) => g.type === 'loadbalance')
+      ? note('warn', 'В sing-box нет групп loadbalance — они будут заменены на urltest (генератор покажет это в предупреждениях).') : '');
     clear(list);
     if (!s.groups.length) list.append(h('div', { class: 'empty' }, 'Групп пока нет. Нажмите «Быстрый старт» или добавьте группу вручную.'));
     s.groups.forEach((g, i) => list.append(card(g, i)));
@@ -67,13 +67,16 @@ export default async function (root) {
         h('button', { class: 'btn sm', 'aria-label': 'Убрать', onclick: () => toggle(m, false) }, '✕'))))]) : h('p', { class: 'small', style: 'color:var(--err)' }, 'Группа пуста — добавьте участников.'));
   }
 
+  let quickMode = 'fallback';
   function quick() {
     const names = s.nodes.filter((n) => !n.disabled).map((n) => n.name);
     if (!names.length) { toast('Сначала добавьте узлы', 'err'); return; }
     const t = taken();
     const auto = st.uniqueName('Auto', t); t.add(auto);
     const proxy = st.uniqueName('Proxy', t);
-    s.groups.push({ name: auto, type: 'urltest', members: names.slice(), url: 'https://www.gstatic.com/generate_204', interval: 180, tolerance: 50 });
+    s.groups.push(quickMode === 'fallback'
+      ? { name: auto, type: 'fallback', members: names.slice(), url: 'https://www.gstatic.com/generate_204', interval: 60 }
+      : { name: auto, type: 'urltest', members: names.slice(), url: 'https://www.gstatic.com/generate_204', interval: 180, tolerance: 50 });
     s.groups.push({ name: proxy, type: 'selector', members: [auto, ...names] });
     if (s.final === 'direct') s.final = proxy;
     st.touch(); draw(); toast('Созданы группы «' + auto + '» и «' + proxy + '»; «Final» = ' + s.final, 'ok');
@@ -84,7 +87,10 @@ export default async function (root) {
       h('button', { class: 'btn primary', onclick: () => {
         s.groups.push({ name: st.uniqueName('Группа', taken()), type: 'selector', members: [] }); st.touch(); draw();
       } }, '+ Добавить группу'),
-      h('button', { class: 'btn', onclick: quick }, 'Быстрый старт (Auto + Proxy)')),
+      h('button', { class: 'btn', onclick: quick }, 'Быстрый старт (Auto + Proxy)'),
+      h('select', { 'aria-label': 'Режим группы Auto', style: 'width:auto;min-width:200px', onchange: (e) => { quickMode = e.target.value; } },
+        h('option', { value: 'fallback', selected: true }, 'Auto: первый рабочий'),
+        h('option', { value: 'urltest' }, 'Auto: самый быстрый'))),
     top, list);
   draw();
 }
