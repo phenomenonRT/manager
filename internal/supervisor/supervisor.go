@@ -243,6 +243,8 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 		cmd = exec.Command(bin, "-d", dir, "-f", cfgPath)
 	} else {
 		cmd = exec.Command(bin, "run", "-c", cfgPath, "-D", dir)
+		// страховка для сборок 1.14+: не падать из-за устаревшего неявного HTTP-клиента
+		cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
 	}
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -479,6 +481,7 @@ func checkConfig(core, bin, dir, cfg string) (string, error) {
 		cmd = exec.CommandContext(ctx, bin, "-t", "-d", dir, "-f", cfg)
 	} else {
 		cmd = exec.CommandContext(ctx, bin, "check", "-c", cfg, "-D", dir)
+		cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
 	}
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()

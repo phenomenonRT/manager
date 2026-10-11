@@ -32,19 +32,45 @@ export default async function (root) {
   const setsBox = h('div');
   const core = () => s.core;
 
-  function drawSets() {
-    clear(setsBox);
-    if (!s.rule_sets.length) setsBox.append(h('div', { class: 'empty' }, 'Своих наборов нет. Для типов geosite/geoip наборы подключаются автоматически.'));
-    s.rule_sets.forEach((r, i) => setsBox.append(h('div', { class: 'rule' },
-      fgrid(field('Имя', txt(r, 'name', { ph: 'my-set' }), 'Это имя вы указываете в правиле типа «Набор правил».'),
-        field('URL', txt(r, 'url', { ph: 'https://…/set.srs' })),
-        field('Формат', sel(r, 'format', [['', 'определить по URL'], ['srs', 'srs (sing-box)'], ['json', 'json (sing-box)'], ['mrs', 'mrs (Mihomo)'], ['yaml', 'yaml (Mihomo)'], ['text', 'text (Mihomo)']]), 'sing-box понимает srs/json, Mihomo — mrs/yaml/text. Набор не того формата будет пропущен.'),
-        field('Behavior (Mihomo)', sel(r, 'behavior', [['', 'авто'], 'domain', 'ipcidr', 'classical']), 'Что внутри набора: домены, подсети или смешанные правила. Нужно только Mihomo.'),
-        field('Обновлять, сек', num(r, 'interval', { min: 0 }), '86400 = раз в сутки. 0 — по умолчанию.')),
-      h('div', { class: 'row end' }, h('button', { class: 'btn sm danger', onclick: () => { s.rule_sets.splice(i, 1); st.touch(); drawSets(); } }, 'Удалить')))));
+  // Набор сам ничего не маршрутизирует: трафик направляет правило «Набор правил → куда». Здесь это правило
+  // создаётся и меняется одним выбором «Куда направить», а в списке правил выше оно остаётся видимым.
+  const ruleOf = (name) => s.rules.find((x) => x.type === 'rule_set' && x.values && x.values.length === 1 && x.values[0] === name);
+  const usedElsewhere = (name) => s.rules.filter((x) => x.type === 'rule_set' && x.values && x.values.includes(name) && !(x.values.length === 1)).length;
+  const dest = () => [['', 'не направлять (набор только подключён)'], ...outs()];
+  function setRule(name, out) {
+    const r = ruleOf(name);
+    if (!out) { if (r) s.rules.splice(s.rules.indexOf(r), 1); }
+    else if (r) r.outbound = out;
+    else s.rules.push({ type: 'rule_set', values: [name], outbound: out });
+    st.touch(); ed.redraw();
   }
 
-  const presetSel = { v: '0' };
+  function drawSets() {
+    clear(setsBox);
+    if (!s.rule_sets.length) setsBox.append(h('div', { class: 'empty' }, 'Наборов пока нет. Выберите шаблон выше и укажите, куда направлять трафик из него.'));
+    s.rule_sets.forEach((r, i) => {
+      let prev = r.name;
+      const cur = ruleOf(r.name);
+      const more = usedElsewhere(r.name);
+      const outSel = h('select', { 'aria-label': 'Куда направить трафик набора ' + r.name, onchange: (e) => { if (!r.name) { toast('Сначала укажите имя набора', 'err'); e.target.value = ''; return; } setRule(r.name, e.target.value); drawSets(); } },
+        dest().map(([v, t]) => h('option', { value: v, selected: v === (cur ? cur.outbound : '') }, t)));
+      const status = cur ? h('span', { class: 'badge ok' }, 'направляется → ' + cur.outbound)
+        : more ? h('span', { class: 'badge' }, 'используется в составном правиле')
+          : h('span', { class: 'badge warn' }, 'не используется — трафик не направляется');
+      setsBox.append(h('div', { class: 'rule' },
+        h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:8px' },
+          h('b', r.name || 'новый набор'), status, h('span', { class: 'grow' }),
+          h('button', { class: 'btn sm danger', onclick: () => { const old = ruleOf(r.name); if (old) s.rules.splice(s.rules.indexOf(old), 1); s.rule_sets.splice(i, 1); st.touch(); ed.redraw(); drawSets(); } }, 'Удалить')),
+        fgrid(field('Куда направить трафик', outSel, 'Создаёт правило «этот набор → выбранный выход». Правила работают сверху вниз: новое добавляется в конец списка правил, а всё, что не подошло, уходит в «Final».'),
+          field('Адрес списка (URL)', txt(r, 'url', { ph: 'https://…/set.srs' }), 'Файл .srs или .json с доменами или подсетями; ядро скачивает и обновляет его само.')),
+        h('details', { style: 'margin-top:6px' }, h('summary', { class: 'small' }, 'Дополнительно: имя, формат, обновление'),
+          fgrid(field('Имя', txt(r, 'name', { ph: 'my-set', onchange: () => { const c = ruleOf(prev); if (c) c.values = [r.name]; prev = r.name; ed.redraw(); } }), 'Внутреннее имя набора; в правилах он выбирается по нему.'),
+            field('Формат', sel(r, 'format', [['', 'определить по URL'], ['srs', 'srs (бинарный)'], ['json', 'json (текстовый)']]), 'Обычно определяется по окончанию ссылки.'),
+            field('Обновлять, сек', num(r, 'interval', { min: 0 }), '86400 = раз в сутки. 0 — по умолчанию.')))));
+    });
+  }
+
+  const presetSel = { v: '0', out: '' };
   const g = s.general;
   apd(root, pageHead('Маршрутизация', 'Правила применяются сверху вниз: побеждает первое подходящее'), transparentNote(),
     h('div', { class: 'card' }, h('h2', 'Общее'),
@@ -61,16 +87,20 @@ export default async function (root) {
         } }, h('option', { value: '' }, 'Добавить по шаблону…'), QUICK.map((q, i) => h('option', { value: i }, q[0])))),
       ed.el),
     h('div', { class: 'card' }, h('h2', 'Наборы правил'),
-      h('p', { class: 'small mute' }, 'Удалённые списки доменов и подсетей. Шаблоны ниже подставят ссылки ' + (core() === 'mihomo' ? 'MetaCubeX meta-rules-dat (.mrs)' : 'SagerNet sing-geosite/sing-geoip (.srs)') + ' под текущее ядро.'),
-      h('div', { class: 'row', style: 'margin-bottom:10px' },
-        h('select', { 'aria-label': 'Шаблон набора', style: 'width:auto', onchange: (e) => { presetSel.v = e.target.value; } }, PRESETS.map((p, i) => h('option', { value: i }, p[0] + ' — ' + p[1] + '-' + p[2]))),
-        h('button', { class: 'btn', onclick: () => {
+      h('p', { class: 'small mute' }, 'Набор — это готовый список доменов или подсетей (Telegram, YouTube, реклама…). Выберите набор и то, куда направлять его трафик: правило создастся само и появится в списке «Правила» выше. Ссылки на списки (.srs) подставляются автоматически.'),
+      h('div', { class: 'row', style: 'margin-bottom:10px;flex-wrap:wrap;gap:8px' },
+        h('select', { 'aria-label': 'Шаблон набора', style: 'width:auto', onchange: (e) => { presetSel.v = e.target.value; } }, PRESETS.map((p, i) => h('option', { value: i }, p[0]))),
+        h('span', { class: 'small mute' }, '→'),
+        h('select', { 'aria-label': 'Куда направить', style: 'width:auto', onchange: (e) => { presetSel.out = e.target.value; } },
+          outs().filter((o) => o[0] !== undefined).map(([v, t]) => h('option', { value: v, selected: v === proxyOut() }, t))),
+        h('button', { class: 'btn primary', onclick: () => {
           const p = PRESETS[+presetSel.v || 0]; const name = p[1] + '-' + p[2];
           if (s.rule_sets.some((r) => r.name === name)) { toast('Набор «' + name + '» уже есть', 'err'); return; }
-          s.rule_sets.push({ name, url: presetURL(core(), p[1], p[2]), format: core() === 'mihomo' ? 'mrs' : 'srs', behavior: p[1] === 'geoip' ? 'ipcidr' : 'domain', interval: 86400 });
-          st.touch(); drawSets(); toast('Добавлен набор «' + name + '». Используйте его в правиле типа «Набор правил».', 'ok');
-        } }, 'Добавить набор'),
-        h('button', { class: 'btn', onclick: () => { s.rule_sets.push({ name: '', url: '', format: '', behavior: '', interval: 86400 }); st.touch(); drawSets(); } }, 'Свой набор')),
+          const out = presetSel.out || proxyOut();
+          s.rule_sets.push({ name, url: presetURL(core(), p[1], p[2]), format: 'srs', behavior: p[1] === 'geoip' ? 'ipcidr' : 'domain', interval: 86400 });
+          setRule(name, out); drawSets(); toast('Добавлен набор «' + p[0] + '» → ' + out, 'ok');
+        } }, 'Добавить'),
+        h('button', { class: 'btn', onclick: () => { s.rule_sets.push({ name: 'set-' + (s.rule_sets.length + 1), url: '', format: '', behavior: '', interval: 86400 }); st.touch(); drawSets(); } }, 'Свой набор по ссылке')),
       setsBox));
   drawSets();
 }

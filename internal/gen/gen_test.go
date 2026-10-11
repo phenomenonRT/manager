@@ -303,3 +303,18 @@ func TestIfaceNode(t *testing.T) {
 	}
 	t.Error("пустой интерфейс должен давать ошибку")
 }
+
+func TestAmneziaRuleSetHTTPClient(t *testing.T) {
+	s := sample()
+	s.Core = model.CoreAmnezia
+	s.RuleSets = []model.RuleSet{{Name: "geosite-youtube", URL: "https://example.com/a.srs", Format: "srs"}}
+	s.Rules = append(s.Rules, model.Rule{Type: "rule_set", Values: []string{"geosite-youtube"}, Outbound: "direct"})
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := string(res.Config)
+	if !strings.Contains(c, `"http_clients"`) || !strings.Contains(c, `"http_client": "rules-dl"`) || strings.Contains(c, "download_detour") {
+		t.Errorf("ожидался явный http_client:\n%s", c)
+	}
+}

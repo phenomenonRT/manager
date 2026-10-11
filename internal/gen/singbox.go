@@ -33,6 +33,14 @@ func Singbox(s *model.Settings) (*Result, error) {
 	if len(endpoints) > 0 {
 		root.Set("endpoints", endpoints)
 	}
+	if len(p.sets) > 0 && s.Core == model.CoreAmnezia {
+		// sing-box 1.14+: списки скачиваются через явный HTTP-клиент (неявный клиент по умолчанию устарел)
+		via := "direct"
+		if v := s.General.UpdateVia; v != "" && v != "block" {
+			via = v
+		}
+		root.Set("http_clients", []any{NewO().Set("tag", "rules-dl").Set("detour", via)})
+	}
 	root.Set("route", sbRoute(s, p))
 
 	exp := NewO()
@@ -528,7 +536,9 @@ func sbRoute(s *model.Settings, p *plan) *O {
 				o.Set("format", "binary")
 			}
 			o.Set("url", sp.URL)
-			if v := s.General.UpdateVia; v != "" && v != "direct" && v != "block" {
+			if s.Core == model.CoreAmnezia {
+				o.Set("http_client", "rules-dl")
+			} else if v := s.General.UpdateVia; v != "" && v != "direct" && v != "block" {
 				o.Set("download_detour", v)
 			}
 			iv := sp.Interval
