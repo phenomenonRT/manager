@@ -1,7 +1,7 @@
-# corepanel — панель настройки sing-box и Mihomo для роутеров
+# corepanel — панель настройки awg-box для роутеров
 
-Веб-интерфейс (Go + JS + CSS, один статический бинарник ~8 МБ, без зависимостей) для **OpenWrt** и **Keenetic (Entware)**.
-Позволяет выбрать и установить ядро **sing-box**, **Mihomo** или **amnezia-box** (форк sing-box с AmneziaWG), добавить VPN/прокси-узлы, настроить маршрутизацию, DNS, TUN и прозрачный прокси — и запустить всё из браузера.
+Веб-интерфейс (Go + JS + CSS, один статический бинарник ~8 МБ, без зависимостей) для **OpenWrt**  (Entware)**.
+Позволяет выбрать и установить ядро **amnezia-box** (форк sing-box с AmneziaWG), добавить VPN/прокси-узлы, настроить маршрутизацию, DNS, TUN и прозрачный прокси — и запустить всё из браузера.
 
 ## Возможности
 
@@ -37,7 +37,7 @@ COREPANEL_BASE_URL=https://example.com/corepanel sh install.sh
 
 ### Требования к системе
 
-| | OpenWrt | Keenetic |
+| | OpenWrt |
 |---|---|---|
 | Пакеты | `kmod-tun`, для tproxy `kmod-nft-tproxy` | компонент «Пакеты OPKG», Entware |
 | Каталог данных | `/etc/corepanel` | `/opt/etc/corepanel` |
