@@ -92,7 +92,7 @@ export function confirmBox(msg, okText = 'Удалить', danger = true) {
 // ---- поля ----
 let editHook = () => {};
 export const onEdit = (f) => { editHook = f; };
-const fire = (o) => { editHook(); if (o && o.onchange) o.onchange(); };
+export const fire = (o) => { editHook(); if (o && o.onchange) o.onchange(); };
 
 export function help(text) {
   return h('span', { class: 'help', tabindex: '0', role: 'img', 'aria-label': text, 'data-tip': text }, '?');

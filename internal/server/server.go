@@ -143,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST", "import/url", s.importURL, true)
 	api("POST", "keygen", s.keygen, true)
 	api("GET", "interfaces", s.interfaces, true)
+	api("GET", "dns/system", s.dnsSystem, true)
 	api("GET", "firewall/preview", s.fwPreview, true)
 	api("GET", "logs", s.logs, true)
 	api("GET", "logs/stream", s.logStream, true)

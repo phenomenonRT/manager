@@ -1,5 +1,6 @@
 import { apd, h, clear, pageHead, note, field, fgrid, txt, sel, chk } from '../ui.js';
 import { ruleEditor } from '../rules.js';
+import { dnsPick } from '../dnspick.js';
 import * as st from '../state.js';
 
 const S = st.S;
@@ -14,9 +15,9 @@ export default async function (root) {
       fgrid(
         field('Слушать на', txt(d, 'listen', { ph: '127.0.0.1:1053' }), 'Адрес, где ядро принимает DNS-запросы. Чтобы перехватывать DNS из сети (dns_redirect) или подставить в dnsmasq для всей LAN, нужен 0.0.0.0:порт.'),
         field('Режим', sel(d, 'mode', [['normal', 'normal — обычный'], ['fakeip', 'fakeip — поддельные адреса']], { onchange: draw }), 'fakeip мгновенно отвечает адресом из служебной подсети и узнаёт домен при соединении. Ускоряет работу, но ломает приложения, которые хранят IP, и некоторые игры.'),
-        field('Remote DNS', txt(d, 'remote', { ph: 'https://1.1.1.1/dns-query' }), 'Формат: https://host/path, tls://host, quic://host, udp://host или просто IP.'),
-        field('Local DNS', txt(d, 'local', { ph: '77.88.8.8' })),
-        field('Bootstrap DNS', txt(d, 'bootstrap', { ph: '77.88.8.8' }), 'IP-адрес обычного DNS, которым ядро определяет адрес самого DoH/DoT-сервера (иначе «курица и яйцо»).'),
+        field('Remote DNS', dnsPick(d, 'remote', 'remote', { ph: 'https://1.1.1.1/dns-query' }), 'Нажмите на поле — откроется список DoH/DoT/DoQ-серверов. Можно ввести свой: https://host/path, tls://host, quic://host, udp://host или просто IP.'),
+        field('Local DNS', dnsPick(d, 'local', 'local', { ph: '77.88.8.8' }), 'Обычный DNS для российских и локальных доменов. Выберите из списка, DNS роутера (local) или введите свой адрес.'),
+        field('Bootstrap DNS', dnsPick(d, 'bootstrap', 'bootstrap', { ph: '77.88.8.8' }), 'IP-адрес обычного DNS, которым ядро определяет адрес самого DoH/DoT-сервера (иначе «курица и яйцо»).'),
         field('Remote через', sel(d, 'remote_detour', [['', 'по умолчанию (final)'], ...st.outbounds().filter((o) => o[0] !== 'block')]), 'Через какой узел или группу ходить к Remote DNS. Пусто — как весь остальной трафик.'),
         d.mode === 'fakeip' ? field('Диапазон fake-ip', txt(d, 'fakeip_range', { ph: '198.18.0.0/15' }), 'Служебная подсеть, не должна пересекаться с вашей LAN.') : null,
         field('DNS по умолчанию (final)', sel(d, 'final', [['remote', 'remote'], ['local', 'local']]), 'Какой сервер отвечает на домены, не попавшие под DNS-правила.')),
