@@ -86,6 +86,7 @@ type Status struct {
 	Restarts      int      `json:"restarts"`
 	Version       string   `json:"version,omitempty"`
 	Warnings      []string `json:"warnings,omitempty"`
+	Notice        string   `json:"notice,omitempty"` // не ошибка: например, ожидание сети
 }
 
 // Supervisor управляет процессом ядра.
@@ -104,6 +105,8 @@ type Supervisor struct {
 	fw        *firewall.Scripts
 	desired   bool
 	restarts  int
+	waitNet   bool // ядро не стартовало из-за отсутствия сети: повторяем запуск без красной ошибки
+	netLoop   bool
 	warnings  []string
 	version   string
 	getSet    func() *model.Settings
@@ -233,6 +236,7 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	if userInitiated {
 		s.restarts = 0
 	}
+	s.waitNet = false
 	s.Logs.Add(fmt.Sprintf("[panel] запущен %s (pid %d), конфиг %s", filepath.Base(bin), cmd.Process.Pid, cfgPath))
 
 	var wg sync.WaitGroup
@@ -259,6 +263,17 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	select {
 	case <-done:
 		tail := strings.Join(s.Logs.Tail(6), "\n")
+		if networkNotReady(tail) {
+			// интернета (маршрута по умолчанию) пока нет, например сразу после загрузки роутера
+			s.desired, s.lastErr, s.waitNet = false, "", true
+			s.Logs.Add("[panel] нет маршрута в интернет — это не сбой: запуск будет повторяться каждые 10 с, пока не появится сеть")
+			if !s.netLoop {
+				s.netLoop = true
+				go s.waitNetwork()
+			}
+			return nil
+		}
+		s.waitNet = false
 		s.lastErr = "ядро завершилось сразу после запуска:\n" + tail + hintFor(tail)
 		s.desired = false
 		return errors.New(s.lastErr)
@@ -336,10 +351,41 @@ func (s *Supervisor) onExit(cmd *exec.Cmd, err error) {
 	}
 }
 
+// waitNetwork повторяет запуск, пока не появится сеть (до 10 минут).
+func (s *Supervisor) waitNetwork() {
+	defer func() {
+		s.mu.Lock()
+		s.netLoop = false
+		s.mu.Unlock()
+	}()
+	for i := 0; i < 60; i++ {
+		time.Sleep(10 * time.Second)
+		s.mu.Lock()
+		if !s.waitNet || s.running() || s.getSet == nil {
+			s.mu.Unlock()
+			return
+		}
+		err := s.startLocked(s.getSet(), false)
+		waiting := s.waitNet
+		s.mu.Unlock()
+		if err != nil {
+			s.Logs.Add("[panel] повторный запуск не удался: " + err.Error())
+			return
+		}
+		if !waiting {
+			return
+		}
+	}
+	s.mu.Lock()
+	s.waitNet = false
+	s.lastErr = "сеть не появилась за 10 минут: проверьте подключение к интернету и запустите ядро вручную"
+	s.mu.Unlock()
+}
+
 // Stop останавливает ядро и снимает правила брандмауэра.
 func (s *Supervisor) Stop() error {
 	s.mu.Lock()
-	s.desired = false
+	s.desired, s.waitNet = false, false
 	cmd, done, fw := s.cmd, s.done, s.fw
 	s.fw = nil
 	s.mu.Unlock()
@@ -387,6 +433,9 @@ func (s *Supervisor) Status() Status {
 		st.State = "running"
 		st.PID = s.cmd.Process.Pid
 		st.UptimeSec = int64(time.Since(s.startedAt).Seconds())
+	} else if s.waitNet {
+		st.State = "waiting"
+		st.Notice = "Ждём подключения к интернету (нет маршрута по умолчанию). Ядро запустится само, как только сеть появится."
 	} else if s.lastErr != "" {
 		st.State = "failed"
 	}

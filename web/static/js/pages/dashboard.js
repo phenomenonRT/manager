@@ -4,7 +4,7 @@ import * as st from '../state.js';
 import { transparentNote } from '../transparent.js';
 
 const S = st.S;
-const STATE_RU = { running: 'работает', stopped: 'остановлен', starting: 'запускается', stopping: 'останавливается', error: 'ошибка', failed: 'ошибка' };
+const STATE_RU = { running: 'работает', stopped: 'остановлен', starting: 'запускается', stopping: 'останавливается', error: 'ошибка', failed: 'ошибка', waiting: 'ждёт сеть' };
 const TEST_URL = 'https://www.gstatic.com/generate_204';
 
 export default async function (root) {
@@ -28,7 +28,7 @@ export default async function (root) {
   function drawSvc() {
     const s = S.status;
     if (!s) { clear(svcBox).append(h('h2', 'Сервис'), note('err', 'Нет данных о состоянии')); return; }
-    const run = s.state === 'running' || s.state === 'starting';
+    const run = s.state === 'running' || s.state === 'starting' || s.state === 'waiting';
     const mk = (kind, text, cls) => { const b = h('button', { class: 'btn ' + (cls || ''), onclick: () => act(kind, b) }, text); return b; };
     const kind = s.state === 'running' ? 'ok' : s.state === 'error' || s.state === 'failed' ? 'err' : 'warn';
     clear(svcBox).append(h('h2', 'Сервис'),
@@ -39,6 +39,7 @@ export default async function (root) {
         h('dt', 'Аптайм'), h('dd', run && s.uptime_sec ? fmtDur(s.uptime_sec) : '—'),
         h('dt', 'Версия'), h('dd', s.version || '—'),
         h('dt', 'Перезапусков'), h('dd', String(s.restarts || 0))),
+      s.notice ? note('', s.notice) : null,
       s.error ? errNote(h('b', 'Ошибка ядра: '), s.error) : null,
       s.firewall_error ? errNote(h('b', 'Ошибка брандмауэра: '), s.firewall_error) : null,
       (s.warnings && s.warnings.length) ? note('warn', h('b', 'Предупреждения генератора:'), h('ul', s.warnings.map((w) => h('li', w)))) : null,

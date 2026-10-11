@@ -14,3 +14,9 @@ func hintFor(log string) string {
 	}
 	return ""
 }
+
+// networkNotReady — ядро не стартовало только потому, что в системе ещё нет маршрута в интернет.
+func networkNotReady(log string) bool {
+	l := strings.ToLower(log)
+	return strings.Contains(l, "no route to internet") || strings.Contains(l, "network is unreachable")
+}

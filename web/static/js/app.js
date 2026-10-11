@@ -91,7 +91,7 @@ function startApp() {
     verB.textContent = pv ? 'v' + String(pv).replace(/^v/, '') : '';
     const stt = S.status ? S.status.state : '—';
     const kind = stt === 'running' ? 'ok' : (stt === 'error' || stt === 'failed') ? 'err' : 'warn';
-    clear(svc).append(h('span', { class: 'dot ' + kind }), stt === 'running' ? 'работает' : stt === 'stopped' ? 'остановлен' : stt);
+    clear(svc).append(h('span', { class: 'dot ' + kind }), stt === 'running' ? 'работает' : stt === 'stopped' ? 'остановлен' : stt === 'waiting' ? 'ждёт сеть' : stt);
     drawBar();
   };
   unsub = st.subscribe(paint);
