@@ -223,3 +223,50 @@ func TestRemove(t *testing.T) {
 		t.Fatalf("остались файлы: %v", m)
 	}
 }
+
+func TestInstalledTagAndRemove(t *testing.T) {
+	dir := t.TempDir()
+	in := New(platform.Info{OS: "linux", Arch: "amd64", BinDir: dir})
+	d := model.Download{}
+	if in.InstalledTag(model.CoreAmnezia, d) != "" {
+		t.Fatal("тег неизвестен, пока ядро не ставилось панелью")
+	}
+	os.WriteFile(filepath.Join(dir, "amnezia-box"), []byte("x"), 0o755)
+	os.WriteFile(filepath.Join(dir, "amnezia-box.ver"), []byte("v1.2.3\n"), 0o644)
+	if got := in.InstalledTag(model.CoreAmnezia, d); got != "1.2.3" {
+		t.Fatalf("тег = %q", got)
+	}
+	if _, err := in.Remove(context.Background(), model.CoreAmnezia, d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "amnezia-box.ver")); err == nil {
+		t.Fatal("файл с тегом должен удаляться вместе с ядром")
+	}
+}
+
+func TestOnInstalledHook(t *testing.T) {
+	in := New(platform.Info{OS: "linux", Arch: "amd64", BinDir: t.TempDir()})
+	called := ""
+	in.OnInstalled = func(core string) string { called = core; return ". Ядро перезапущено" }
+	if err := in.run(model.CoreAmnezia, func(ctx context.Context) (string, error) { return "1.2.3", nil }); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100 && !in.Job.Snapshot().Finished; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	j := in.Job.Snapshot()
+	if called != model.CoreAmnezia || !strings.Contains(j.Message, "перезапущено") || j.Version != "1.2.3" {
+		t.Fatalf("hook=%q job=%+v", called, j)
+	}
+	// при ошибке установки ядро не трогаем
+	called = ""
+	in2 := New(platform.Info{OS: "linux", Arch: "amd64", BinDir: t.TempDir()})
+	in2.OnInstalled = func(core string) string { called = core; return "" }
+	_ = in2.run(model.CoreAmnezia, func(ctx context.Context) (string, error) { return "", os.ErrNotExist })
+	for i := 0; i < 100 && !in2.Job.Snapshot().Finished; i++ {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if called != "" {
+		t.Fatal("после ошибки перезапускать ядро нельзя")
+	}
+}

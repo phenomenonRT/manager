@@ -176,6 +176,7 @@ type Job struct {
 	Percent  float64 `json:"percent"`
 	Version  string  `json:"version"`
 	Error    string  `json:"error"`
+	Warning  string  `json:"warning,omitempty"` // установка прошла, но есть важное замечание
 	Running  bool    `json:"running"`
 	Finished bool    `json:"finished"`
 }
@@ -187,14 +188,17 @@ func (j *Job) Snapshot() Job {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return Job{Core: j.Core, Stage: j.Stage, Message: j.Message, Percent: j.Percent, Version: j.Version,
-		Error: j.Error, Running: j.Running, Finished: j.Finished}
+		Error: j.Error, Warning: j.Warning, Running: j.Running, Finished: j.Finished}
 }
 
 // Installer выполняет установку ядер.
 type Installer struct {
 	Info platform.Info
 	Job  Job
-	mu   sync.Mutex
+	// OnInstalled вызывается после успешной установки. Возвращает пояснение для пользователя
+	// (например, что ядро перезапущено, чтобы начать работать с новой версией).
+	OnInstalled func(core string) string
+	mu          sync.Mutex
 }
 
 func New(info platform.Info) *Installer { return &Installer{Info: info} }
@@ -439,18 +443,22 @@ func (in *Installer) run(core string, f func(ctx context.Context) (string, error
 	in.Job.set(func(j *Job) {
 		// поля задаём по одному: присваивание всей структуры затёрло бы захваченный мьютекс
 		j.Core, j.Stage, j.Message, j.Percent = core, "resolve", "Определяю версию…", 0
-		j.Version, j.Error, j.Running, j.Finished = "", "", true, false
+		j.Version, j.Error, j.Warning, j.Running, j.Finished = "", "", "", true, false
 	})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 		ver, err := f(ctx)
+		extra := ""
+		if err == nil && in.OnInstalled != nil {
+			extra = in.OnInstalled(core)
+		}
 		in.Job.set(func(j *Job) {
 			j.Running, j.Finished = false, true
 			if err != nil {
 				j.Stage, j.Error, j.Message = "error", err.Error(), "Ошибка установки"
 			} else {
-				j.Stage, j.Percent, j.Version, j.Message = "done", 100, ver, "Установлено: "+ver
+				j.Stage, j.Percent, j.Version, j.Message = "done", 100, ver, "Установлено: "+ver+extra
 			}
 		})
 	}()
@@ -482,6 +490,13 @@ func (in *Installer) install(ctx context.Context, core, version string, d model.
 	for _, tg := range tgs {
 		ver, err := in.installOne(ctx, c, core, tg, binDir)
 		if err == nil {
+			// ядро запускается из другого места (свой путь или копия в PATH) — новая версия не заработает
+			final := filepath.Join(binDir, BinName(core))
+			if loc := in.Locate(core, d); loc != "" && loc != final {
+				in.Job.set(func(j *Job) {
+					j.Warning = fmt.Sprintf("Новая версия записана в %s, но панель запускает ядро из %s (свой путь или другая копия в PATH), поэтому обновление не вступит в силу. Уберите свой путь в настройках ниже или удалите ту копию.", final, loc)
+				})
+			}
 			return ver, nil
 		}
 		var nr notRunnable
@@ -553,7 +568,35 @@ func (in *Installer) installOne(ctx context.Context, c *http.Client, core string
 	if err := os.Rename(newBin, final); err != nil {
 		return "", err
 	}
+	// запоминаем тег релиза: по нему панель узнаёт, есть ли новее (сам бинарник может печатать версию иначе, чем тег)
+	_ = os.WriteFile(final+".ver", []byte(tg.Version+"\n"), 0o644)
 	return ver, nil
+}
+
+// InstalledTag — тег релиза, установленного панелью («» — неизвестно: ядро поставлено не ею).
+func (in *Installer) InstalledTag(core string, d model.Download) string {
+	b, err := os.ReadFile(filepath.Join(in.BinDir(d), BinName(core)) + ".ver")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimSpace(string(b)), "v")
+}
+
+// Latest узнаёт тег последнего релиза ядра на GitHub (без «v»).
+func (in *Installer) Latest(ctx context.Context, core string, d model.Download) (string, error) {
+	c, err := httpClient(d)
+	if err != nil {
+		return "", err
+	}
+	var rel release
+	if err := getJSON(ctx, c, "https://api.github.com/repos/"+Repo[core]+"/releases/latest", &rel); err == nil && rel.Tag != "" {
+		return strings.TrimPrefix(rel.Tag, "v"), nil
+	}
+	t, err := resolveLatestTag(ctx, c, d, Repo[core])
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(t, "v"), nil
 }
 
 // DiagnoseBinary объясняет, почему ELF-файл не запускается: чужая архитектура или нет загрузчика.
@@ -759,7 +802,7 @@ func (in *Installer) Remove(ctx context.Context, core string, d model.Download) 
 	}
 	var done []string
 	final := filepath.Join(in.BinDir(d), BinName(core))
-	for _, f := range []string{final, final + ".new", final + ".bak"} {
+	for _, f := range []string{final, final + ".new", final + ".bak", final + ".ver"} {
 		if err := os.Remove(f); err == nil {
 			done = append(done, f)
 		} else if !os.IsNotExist(err) {

@@ -17,6 +17,7 @@ export default async function (root) {
   const depBox = h('div');
   let depT = 0;
   const jobBox = h('div');
+  const latest = {}; // id -> ответ api/core/latest: есть ли версия новее установленной
   apd(root, pageHead('Компоненты', 'Ядро amnezia-box: установка, обновление и удаление. Установка Mihomo заблокирована'),
     h('div', { class: 'bay' }, meterBox, coreRows, depBox), jobBox);
 
@@ -59,7 +60,10 @@ export default async function (root) {
       const blocked = !!c.blocked;
       const sp = space(id);
       const lack = !sp.ok && !c.blocked;
-      const btn = h('button', { class: 'btn primary' + (lack ? ' lowspace' : ''), disabled: lack, title: lack ? 'Не хватает места' : null, onclick: (e) => { e.stopPropagation(); install(id, ''); } }, info.installed ? 'Обновить' : 'Установить');
+      const lt = latest[id];
+      const upToDate = !!(info.installed && lt && lt.known && !lt.update);
+      const label = !info.installed ? 'Установить' : upToDate ? 'Переустановить' : lt && lt.latest ? 'Обновить до v' + lt.latest : 'Обновить';
+      const btn = h('button', { class: 'btn' + (upToDate ? '' : ' primary') + (lack ? ' lowspace' : ''), disabled: lack, title: lack ? 'Не хватает места' : upToDate ? 'Установлена последняя версия. Кнопка скачает её заново.' : null, onclick: (e) => { e.stopPropagation(); install(id, ''); } }, label);
       if (blocked) { btn.disabled = true; btn.title = 'Установка заблокирована'; btn.classList.remove('lowspace'); }
       const pkgBtn = c.pkg ? h('button', { class: 'btn', disabled: blocked, title: 'Пакет из репозитория OpenWrt/Entware (opkg или apk): обычно компактнее релиза GitHub.', onclick: (e) => { e.stopPropagation(); install(id, '', 'package'); } }, 'Из пакетов системы') : null;
       const delBtn = h('button', { class: 'btn danger', onclick: async (e) => { e.stopPropagation(); remove(id); } }, 'Удалить');
@@ -67,9 +71,11 @@ export default async function (root) {
       coreRows.append(h('div', { class: 'mod' + (sel ? ' on' : '') + (blocked ? ' blocked' : ''), onclick: (e) => { if (blocked || e.target.closest('button,input,label,details')) return; pick.click(); } },
         h('div', { class: 'mod-head' }, h('label', { class: 'mod-name' }, pick, h('b', c.name)),
           h('span', { class: 'mod-tag' }, c.tag), h('span', { class: 'grow' }),
-          blocked ? badge('заблокировано', 'err') : null, sel ? badge('активно', 'acc') : null, info.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn')),
+          blocked ? badge('заблокировано', 'err') : null, sel ? badge('активно', 'acc') : null,
+          info.installed && lt && lt.known ? (lt.update ? badge('доступна v' + lt.latest, 'acc') : badge('последняя версия', 'ok')) : null,
+          info.installed ? badge('установлено', 'ok') : badge('не установлено', 'warn')),
         h('div', { class: 'chips' }, c.chips.map((x) => h('span', x))),
-        h('div', { class: 'mod-meta mono small' }, info.installed ? [h('span', 'v' + (info.version || '?').replace(/^v/, '')), h('span', info.path)] : [h('span', 'нужно около ' + (sp.need || '?') + ' МБ')]),
+        h('div', { class: 'mod-meta mono small' }, info.installed ? [h('span', 'v' + (info.version || '?').replace(/^v/, '')), h('span', info.path), lt && lt.latest && !lt.known ? h('span', 'на GitHub: v' + lt.latest) : null] : [h('span', 'нужно около ' + (sp.need || '?') + ' МБ')]),
         (lack && !blocked) ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Скачанный файл при нехватке места удаляется. Подключите накопитель и укажите каталог установки ниже' + (c.pkg ? ' либо поставьте ядро «Из пакетов системы».' : '.')) : null,
         blocked ? note('', 'Установка Mihomo заблокирована в этой сборке панели.') : null,
         h('div', { class: 'mod-act' }, btn, pkgBtn, info.installed ? delBtn : null)));
@@ -89,6 +95,14 @@ export default async function (root) {
     try { await post('api/core/install', { core, version, source: source || 'github' }); } catch (e) { toastErr(e); return; }
     toast('Загрузка начата', 'ok'); poll();
   }
+  async function loadLatest() {
+    const cores = (S.system && S.system.cores) || {};
+    for (const id of ORDER) {
+      if (CORES[id].blocked || !(cores[id] || {}).installed) continue;
+      try { latest[id] = await get('api/core/latest?core=' + id); } catch (e) { delete latest[id]; }
+    }
+    if (alive) draw();
+  }
   function poll() {
     clearTimeout(pollT);
     const tick = async () => {
@@ -98,9 +112,10 @@ export default async function (root) {
       drawJob(j);
       if (j && j.running) { pollT = setTimeout(tick, 700); return; }
       if (j && j.finished) {
-        if (j.error) toast('Ошибка установки: ' + j.error, 'err'); else toast('Установлено: ' + (j.version || ''), 'ok');
+        if (j.error) toast('Ошибка установки: ' + j.error, 'err'); else toast(j.message || ('Установлено: ' + (j.version || '')), 'ok');
         try { await st.loadSystem(); } catch (e) { /* ignore */ }
         if (alive) draw();
+        loadLatest();
       }
     };
     tick();
@@ -111,6 +126,7 @@ export default async function (root) {
     const bar = h('i'); bar.style.width = Math.min(100, j.percent || 0) + '%';
     jobBox.append(h('div', { class: 'card' }, h('h2', 'Установка ' + st.coreName(j.core)),
       j.error ? note('err', j.error) : null,
+      j.warning ? note('warn', j.warning) : null,
       h('div', { class: 'row small', style: 'margin-bottom:6px' }, j.running ? h('span', { class: 'spin' }) : null, h('span', j.message || j.stage || ''), h('span', { class: 'grow' }), h('span', (j.percent || 0) + '%')),
       h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(j.percent || 0) }, bar)));
   }
@@ -142,6 +158,7 @@ export default async function (root) {
 
   draw();
   depLoad();
+  loadLatest();
   get('api/core/job').then((j) => { if (j && j.running) poll(); else drawJob(j && j.finished && j.error ? j : null); }).catch(() => {});
 
   const d = s.download;

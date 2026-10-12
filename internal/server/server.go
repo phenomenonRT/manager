@@ -58,6 +58,18 @@ type failure struct {
 }
 
 func New(version string, info platform.Info, st *store.Store, sup *supervisor.Supervisor, inst *installer.Installer) *Server {
+	// После установки или обновления работающее ядро перезапускаем: иначе процесс остаётся на старой версии,
+	// а заменённый файл держит место на диске до перезапуска.
+	inst.OnInstalled = func(core string) string {
+		cur := sup.Status()
+		if cur.Core != core || (cur.State != "running" && cur.State != "starting" && cur.State != "waiting") {
+			return ""
+		}
+		if err := sup.Restart(st.Get()); err != nil {
+			return ". Ядро перезапустить не удалось: " + err.Error() + " — перезапустите его вручную"
+		}
+		return ". Ядро перезапущено"
+	}
 	return &Server{Version: version, Info: info, St: st, Sup: sup, Inst: inst, Kmods: kmods.New(info),
 		Updater: updater.New(version, info, st.Get, nil),
 		key:     loadKey(st.Dir()), fails: map[string]*failure{}}
@@ -138,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST", "service/restart", s.svc("restart"), true)
 	api("POST", "core/install", s.coreInstall, true)
 	api("POST", "core/remove", s.coreRemove, true)
+	api("GET", "core/latest", s.coreLatest, true)
 	api("GET", "core/job", func(w http.ResponseWriter, r *http.Request) { ok(w, s.Inst.Job.Snapshot()) }, true)
 	api("POST", "import", s.importText, true)
 	api("POST", "import/url", s.importURL, true)
@@ -567,6 +580,25 @@ func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, s.Inst.Job.Snapshot())
+}
+
+// coreLatest сравнивает установленную панелью версию ядра с последним релизом на GitHub.
+func (s *Server) coreLatest(w http.ResponseWriter, r *http.Request) {
+	core := r.URL.Query().Get("core")
+	if core != model.CoreAmnezia {
+		fail(w, 400, "core: поддерживается только amnezia")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	dl := s.St.Get().Download
+	latest, err := s.Inst.Latest(ctx, core, dl)
+	if err != nil {
+		fail(w, 502, "не удалось узнать последнюю версию: "+err.Error())
+		return
+	}
+	have := s.Inst.InstalledTag(core, dl)
+	ok(w, map[string]any{"latest": latest, "installed": have, "known": have != "", "update": have == "" || have != latest})
 }
 
 func (s *Server) coreRemove(w http.ResponseWriter, r *http.Request) {
