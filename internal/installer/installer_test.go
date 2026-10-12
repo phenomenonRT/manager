@@ -256,7 +256,7 @@ func TestOnInstalledHook(t *testing.T) {
 	}
 	j := in.Job.Snapshot()
 	if called != model.CoreAmnezia || !strings.Contains(j.Message, "перезапущено") || j.Version != "1.2.3" {
-		t.Fatalf("hook=%q job=%+v", called, j)
+		t.Fatalf("hook=%q stage=%q msg=%q ver=%q", called, j.Stage, j.Message, j.Version)
 	}
 	// при ошибке установки ядро не трогаем
 	called = ""
