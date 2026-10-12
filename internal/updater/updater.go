@@ -1,5 +1,5 @@
 // Package updater — проверка и установка новых версий самой панели с GitHub Releases
-// (https://github.com/phenomenonRT/manager/releases). Берётся готовый бинарник
+// (https://github.com/phenomenonRT/panel_awg-box_sing-box/releases). Берётся готовый бинарник
 // corepanel-linux-<arch>, проверяется по SHA256SUMS.txt и подменяет текущий файл; затем
 // панель перезапускает сама себя (exec), остановив ядро и вернув его после запуска.
 package updater
@@ -28,7 +28,7 @@ import (
 )
 
 // latestURL — последний релиз (переопределяется в тестах).
-var latestURL = "https://api.github.com/repos/phenomenonRT/manager/releases/latest"
+var latestURL = "https://api.github.com/repos/phenomenonRT/panel_awg-box_sing-box/releases/latest"
 
 // ResumeMarker — файл в каталоге данных: после обновления ядро нужно запустить снова.
 const ResumeMarker = "resume-core"
