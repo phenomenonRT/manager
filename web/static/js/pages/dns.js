@@ -10,7 +10,10 @@ export default async function (root) {
   const body = h('div');
   function draw() {
     if (!d.enabled) { clear(body).append(note('', 'DNS ядра выключен: используется системный DNS.')); return; }
+    const via = d.remote_detour || S.settings.final;
+    const enc = /^(https|tls|quic|h3):\/\//i.test((d.remote || '').trim());
     clear(body).append(
+      enc && (via === 'direct' || !via) ? note('warn', 'Remote DNS (' + d.remote + ') сейчас ходит напрямую, мимо VPN: «Remote через» не задано, а Final = direct. DoH/DoT провайдеры в России нередко замедляют или режут — запросы будут идти секундами, а проверка узлов может не проходить. Выберите в «Remote через» вашу группу или назначьте её основной (Final).') : null,
       note('', 'Схема: «remote» — защищённый DNS (DoH/DoT), запросы идут через прокси; «local» — обычный DNS провайдера или Яндекса, для российских и локальных доменов.'),
       fgrid(
         field('Слушать на', txt(d, 'listen', { ph: '127.0.0.1:1053' }), 'Адрес, где ядро принимает DNS-запросы. Чтобы перехватывать DNS из сети (dns_redirect) или подставить в dnsmasq для всей LAN, нужен 0.0.0.0:порт.'),

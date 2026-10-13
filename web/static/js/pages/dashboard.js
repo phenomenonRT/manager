@@ -143,7 +143,10 @@ export default async function (root) {
         if (bad.length && bad.length === total) {
           const errMsg = delayErr[bad[0]];
           await loadDiag(); drawProxies(all);
-          toast('Ни один узел не ответил на ' + url + ' за 10 с (' + errMsg + '). Скорее всего, VPN-соединение не поднялось: посмотрите «Логи» ядра, проверьте адрес и ключи узла, интерфейс WAN и поле «Интерфейс по умолчанию» (при TUN). Если узлы рабочие — выберите другой адрес в «Группы → Параметры проверки».', 'err');
+          const dnsFail = (diag || []).some((x) => /lookup failed|dns:.*(timeout|deadline)/i.test(x));
+          toast(dnsFail
+            ? 'Узлы не проверены: ядро не смогло определить адрес ' + hostOf(url) + ' (DNS не ответил за отведённое время). Это не обязательно сбой VPN. Выберите проверку «по IP» в «Группы → Параметры проверки» и посмотрите «DNS»: если трафик DNS идёт напрямую (Final = direct), DoH/DoT часто режутся провайдером. Задайте «Remote через» — группу.'
+            : 'Ни один узел не ответил на ' + url + ' за 10 с (' + errMsg + '). Проверьте адрес, ключи и параметры AWG узла, интерфейс WAN и «Интерфейс по умолчанию» (при TUN). Подробности — в блоке ниже и в «Логи».', 'err');
         }
       } }, 'Проверить задержку');
       ui.proxies.append(h('div', { style: 'margin-bottom:12px' },
@@ -151,6 +154,7 @@ export default async function (root) {
         h('div', { class: 'chips' }, chips)));
     }
   }
+  const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return u; } };
   const delayErr = {};
   let diag = null; // выдержка из журнала ядра после неудачной проверки: показывает настоящую причину
   async function loadDiag() {

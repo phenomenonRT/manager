@@ -13,24 +13,24 @@ const MODES = {
 // Важно: адрес должен отвечать по HTTPS (порт 443). DNS-серверы (8.8.8.8, 8.8.4.4) не подходят —
 // они работают на порту 53 и не отвечают на HTTP-запросы, что вызывает таймаут.
 const PROBES = [
-  ['https://www.gstatic.com/generate_204', 'Google (gstatic) — по умолчанию'],
+  ['https://1.1.1.1', 'по IP: Cloudflare 1.1.1.1 — по умолчанию, не зависит от DNS'],
+  ['https://www.gstatic.com/generate_204', 'Google (gstatic)'],
   ['https://cp.cloudflare.com/generate_204', 'Cloudflare'],
   ['https://www.google.com/generate_204', 'Google'],
   ['http://connectivitycheck.gstatic.com/generate_204', 'Google, без HTTPS'],
   ['http://www.msftconnecttest.com/connecttest.txt', 'Microsoft, без HTTPS'],
-  ['https://1.1.1.1', 'по IP: Cloudflare 1.1.1.1 (без DNS)'],
   ['https://9.9.9.9', 'по IP: Quad9 9.9.9.9 (без DNS)'],
 ];
 const CUSTOM = '__custom';
 function probePick(g, redraw) {
-  const known = PROBES.some((p) => p[0] === (g.url || PROBES[0][0]));
+  const known = PROBES.some((p) => p[0] === (g.url || 'https://1.1.1.1'));
   let custom = !known;
   const input = h('input', { type: 'text', value: g.url || '', placeholder: 'https://example.com/generate_204', spellcheck: 'false', autocomplete: 'off',
     oninput: (e) => { g.url = e.target.value.trim(); st.touch(); } });
   const select = h('select', { 'aria-label': 'Адрес проверки', onchange: (e) => {
     if (e.target.value === CUSTOM) { custom = true; input.parentElement.hidden = false; input.focus(); return; }
     custom = false; g.url = e.target.value; st.touch(); redraw();
-  } }, PROBES.map(([v, t]) => h('option', { value: v, selected: !custom && v === (g.url || PROBES[0][0]) }, t)),
+  } }, PROBES.map(([v, t]) => h('option', { value: v, selected: !custom && v === (g.url || 'https://1.1.1.1') }, t)),
     h('option', { value: CUSTOM, selected: custom }, 'Свой адрес…'));
   const box = h('div', { hidden: !custom, style: 'margin-top:6px' }, input);
   return h('div', select, box);
@@ -45,7 +45,7 @@ export default async function (root) {
   const enabledNodes = () => s.nodes.filter((n) => !n.disabled).map((n) => n.name);
   const taken = (except) => new Set([...s.nodes.map((n) => n.name), ...s.groups.map((g) => g.name), 'direct', 'block'].filter((x) => x !== except));
   const newGroup = (name, type, members) => ({ name, type, members,
-    ...(type === 'selector' ? {} : { url: 'https://www.gstatic.com/generate_204', interval: type === 'fallback' ? 60 : 180 }),
+    ...(type === 'selector' ? {} : { url: 'https://1.1.1.1', interval: type === 'fallback' ? 60 : 180 }),
     ...(type === 'urltest' ? { tolerance: 50 } : {}) });
 
   // Одна группа из всех узлов — и она становится основной (Final).
@@ -103,7 +103,7 @@ export default async function (root) {
       },
     });
     const typeSel = sel(g, 'type', modeOpts(g.type), { onchange: () => {
-      if (g.type !== 'selector') { g.url = g.url || 'https://www.gstatic.com/generate_204'; if (!g.interval) g.interval = g.type === 'fallback' ? 60 : 180; }
+      if (g.type !== 'selector') { g.url = g.url || 'https://1.1.1.1'; if (!g.interval) g.interval = g.type === 'fallback' ? 60 : 180; }
       if (g.type === 'urltest' && !g.tolerance) g.tolerance = 50;
       st.touch(); draw();
     } });
