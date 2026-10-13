@@ -111,7 +111,7 @@ export default async function (root) {
       drawProxies((r && r.proxies) || {});
     } catch (e) { if (alive) clear(ui.proxies).append(h('h2', 'Выбор узла'), note('warn', 'Не удалось получить список прокси: ' + e.message)); }
   }
-  const delays = {};
+  const delays = {}, busy = {};
   // Статус туннелей AmneziaWG: ядро отдаёт его только в журнале, и только на уровне debug.
   async function loadAwg() {
     const nodes = ((S.settings && S.settings.nodes) || []).filter((n) => n.type === 'awg' && !n.disabled);
@@ -142,24 +142,24 @@ export default async function (root) {
       const isSel = /^selector$/i.test(g.type);
       const chips = g.all.map((m) => {
         const d = delays[m] !== undefined ? delays[m] : (all[m] && all[m].history && all[m].history.length ? all[m].history[all[m].history.length - 1].delay : undefined);
-        const lab = d === undefined ? '' : d > 0 ? d + ' мс' : 'сбой';
-        const c = h('button', {
-          type: 'button', class: 'chip' + (g.now === m ? ' on' : '') + (' ' + delayClass(d)), disabled: !isSel,
-          'aria-pressed': g.now === m ? 'true' : 'false', title: (delayErr[m] ? 'Ошибка проверки: ' + delayErr[m] + '. ' : '') + (isSel ? 'Выбрать' : 'Группа выбирает узел автоматически'),
+        const lab = busy[m] ? '…' : d === undefined ? '' : d > 0 ? d + ' мс' : 'сбой';
+        // Клик по узлу проверяет его задержку; в ручной группе он ещё и выбирается.
+        return h('button', {
+          type: 'button', class: 'chip' + (g.now === m ? ' on' : '') + (' ' + delayClass(d)), disabled: !!busy[m],
+          'aria-pressed': g.now === m ? 'true' : 'false',
+          title: (delayErr[m] ? 'Ошибка проверки: ' + delayErr[m] + '. ' : '') + (m === 'block' ? 'Блокировка не отвечает по определению' : isSel ? 'Выбрать и проверить задержку' : 'Проверить задержку'),
           onclick: async () => {
-            try { await put('api/clash/proxies/' + encodeURIComponent(name), { name: m }); g.now = m; drawProxies(all); } catch (e) { toastErr(e); }
+            if (isSel) { try { await put('api/clash/proxies/' + encodeURIComponent(name), { name: m }); g.now = m; } catch (e) { toastErr(e); return; } }
+            if (m === 'block') { drawProxies(all); return; }
+            busy[m] = true; drawProxies(all);
+            const cfg = (S.settings.groups || []).find((x) => x.name === name);
+            await testDelay(m, (cfg && cfg.url) || TEST_URL);
+            busy[m] = false;
+            if (!alive) return;
+            if (delayErr[m]) { await loadDiag(); loadAwg(); }
+            drawProxies(all);
           },
         }, m, h('small', lab));
-        if (m === 'block') return c;
-        const one = h('button', { type: 'button', class: 'chipgo', 'aria-label': 'Проверить задержку узла ' + m, title: 'Проверить только этот узел', onclick: async () => {
-          one.disabled = true; one.textContent = '…';
-          const cfg = (S.settings.groups || []).find((x) => x.name === name);
-          await testDelay(m, (cfg && cfg.url) || TEST_URL);
-          if (!alive) return;
-          if (delayErr[m]) { await loadDiag(); loadAwg(); }
-          drawProxies(all);
-        } }, '↻');
-        return h('span', { class: 'chipwrap' }, c, one);
       });
       const testAll = h('button', { class: 'btn sm', onclick: async () => {
         testAll.disabled = true; testAll.textContent = 'Проверка…';
