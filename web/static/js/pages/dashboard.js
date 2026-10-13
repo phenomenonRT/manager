@@ -114,6 +114,7 @@ export default async function (root) {
     const groups = Object.entries(all).filter(([n, p]) => n !== 'GLOBAL' && Array.isArray(p.all));
     clear(ui.proxies).append(h('h2', 'Выбор узла'));
     if (!groups.length) { ui.proxies.append(h('div', { class: 'empty' }, 'Групп пока нет. Создайте их в разделе «Группы».')); return; }
+    if (diag) ui.proxies.append(note('warn', h('div', h('b', 'Что пишет ядро (последние ошибки):'), h('pre', { class: 'mono small', style: 'white-space:pre-wrap;word-break:break-word;margin:6px 0 0;max-height:200px;overflow:auto' }, diag.join('\n')))));
     for (const [name, g] of groups) {
       const isSel = /^selector$/i.test(g.type);
       const chips = g.all.map((m) => {
@@ -141,6 +142,7 @@ export default async function (root) {
         const total = g.all.filter((m) => m !== 'block').length;
         if (bad.length && bad.length === total) {
           const errMsg = delayErr[bad[0]];
+          await loadDiag(); drawProxies(all);
           toast('Ни один узел не ответил на ' + url + ' за 10 с (' + errMsg + '). Скорее всего, VPN-соединение не поднялось: посмотрите «Логи» ядра, проверьте адрес и ключи узла, интерфейс WAN и поле «Интерфейс по умолчанию» (при TUN). Если узлы рабочие — выберите другой адрес в «Группы → Параметры проверки».', 'err');
         }
       } }, 'Проверить задержку');
@@ -150,6 +152,15 @@ export default async function (root) {
     }
   }
   const delayErr = {};
+  let diag = null; // выдержка из журнала ядра после неудачной проверки: показывает настоящую причину
+  async function loadDiag() {
+    try {
+      const r = await get('api/logs?n=60');
+      const ls = ((r && r.lines) || []).map((x) => (typeof x === 'string' ? x : x.text || x.line || JSON.stringify(x)));
+      const hit = ls.filter((x) => /ERROR|WARN|FATAL|handshake|timeout|refused|unreachable|resolve/i.test(x)).slice(-8);
+      diag = hit.length ? hit : ['В журнале ядра нет ошибок. Уровень логов «warn» не показывает рукопожатие AWG: поставьте info в «Входящие, TUN, сеть → Общие», перезапустите ядро и повторите проверку.'];
+    } catch (e) { diag = null; }
+  }
   async function testDelay(name, url) {
     try {
       const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=10000', { signal: ctl.signal });
