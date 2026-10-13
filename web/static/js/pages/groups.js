@@ -8,6 +8,31 @@ const MODES = {
   selector: { name: 'Ручной выбор', hint: 'Узел выбираете вы сами: на странице «Обзор» или в дашборде ядра.' },
   loadbalance: { name: 'Распределение', hint: 'Распределяет соединения между узлами. В sing-box не поддерживается и заменяется на «Самый быстрый».' },
 };
+// Чем проверять узел. Ядро делает HTTP(S)-запрос через узел (ICMP-пинг ядро не умеет).
+// Адреса-IP работают, даже если DNS не отвечает.
+const PROBES = [
+  ['https://www.gstatic.com/generate_204', 'Google (gstatic) — по умолчанию'],
+  ['https://cp.cloudflare.com/generate_204', 'Cloudflare'],
+  ['https://www.google.com/generate_204', 'Google'],
+  ['http://connectivitycheck.gstatic.com/generate_204', 'Google, без HTTPS'],
+  ['http://www.msftconnecttest.com/connecttest.txt', 'Microsoft, без HTTPS'],
+  ['https://1.1.1.1', 'по IP: Cloudflare 1.1.1.1 (без DNS)'],
+  ['https://8.8.8.8', 'по IP: Google 8.8.8.8 (без DNS)'],
+];
+const CUSTOM = '__custom';
+function probePick(g, redraw) {
+  const known = PROBES.some((p) => p[0] === (g.url || PROBES[0][0]));
+  let custom = !known;
+  const input = h('input', { type: 'text', value: g.url || '', placeholder: 'https://example.com/generate_204', spellcheck: 'false', autocomplete: 'off',
+    oninput: (e) => { g.url = e.target.value.trim(); st.touch(); } });
+  const select = h('select', { 'aria-label': 'Адрес проверки', onchange: (e) => {
+    if (e.target.value === CUSTOM) { custom = true; input.parentElement.hidden = false; input.focus(); return; }
+    custom = false; g.url = e.target.value; st.touch(); redraw();
+  } }, PROBES.map(([v, t]) => h('option', { value: v, selected: !custom && v === (g.url || PROBES[0][0]) }, t)),
+    h('option', { value: CUSTOM, selected: custom }, 'Свой адрес…'));
+  const box = h('div', { hidden: !custom, style: 'margin-top:6px' }, input);
+  return h('div', select, box);
+}
 const modeOpts = (cur) => Object.keys(MODES).filter((k) => k !== 'loadbalance' || k === cur).map((k) => [k, MODES[k].name]);
 
 export default async function (root) {
@@ -113,7 +138,7 @@ export default async function (root) {
         rest.map((m) => h('button', { class: 'chip', type: 'button', onclick: () => add(m) }, '+ ' + m, ' ', h('small', kind(m))))) : null,
       g.type !== 'selector' ? h('details', { class: 'gset' }, h('summary', 'Параметры проверки'),
         fgrid(
-          field('URL проверки', txt(g, 'url', { ph: 'https://www.gstatic.com/generate_204' }), 'Адрес, который ядро запрашивает через каждый узел, чтобы понять, жив ли он.'),
+          field('Чем проверять узел', probePick(g, draw), 'Ядро делает запрос по этому адресу через каждый узел и меряет время ответа. Обычный ping (ICMP) ядро не умеет, поэтому используется HTTP(S). Адреса «по IP» работают, даже если DNS не отвечает. Нужен ответ без редиректов, лучше всего подходят адреса generate_204.'),
           field('Интервал, сек', num(g, 'interval', { min: 10 }), 'Как часто проверять узлы. При обрыве реального соединения ядро переключается сразу, не дожидаясь проверки.'),
           g.type === 'urltest' ? field('Допуск, мс', num(g, 'tolerance', { min: 0 }), 'Не переключаться на другой узел, если он быстрее меньше чем на это значение (защита от «дрожания»).') : null)) : null);
   }

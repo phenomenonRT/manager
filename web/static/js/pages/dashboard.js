@@ -121,7 +121,7 @@ export default async function (root) {
         const lab = d === undefined ? '' : d > 0 ? d + ' мс' : 'сбой';
         const c = h('button', {
           type: 'button', class: 'chip' + (g.now === m ? ' on' : '') + (d > 0 && d < 500 ? ' good' : d === 0 ? ' bad' : ''), disabled: !isSel,
-          'aria-pressed': g.now === m ? 'true' : 'false', title: isSel ? 'Выбрать' : 'Группа выбирает узел автоматически',
+          'aria-pressed': g.now === m ? 'true' : 'false', title: (delayErr[m] ? 'Ошибка проверки: ' + delayErr[m] + '. ' : '') + (isSel ? 'Выбрать' : 'Группа выбирает узел автоматически'),
           onclick: async () => {
             try { await put('api/clash/proxies/' + encodeURIComponent(name), { name: m }); g.now = m; drawProxies(all); } catch (e) { toastErr(e); }
           },
@@ -130,21 +130,29 @@ export default async function (root) {
       });
       const testAll = h('button', { class: 'btn sm', onclick: async () => {
         testAll.disabled = true; testAll.textContent = 'Проверка…';
-        const queue = g.all.slice();
-        const worker = async () => { while (queue.length && alive) { const m = queue.shift(); await testDelay(m); } };
+        const queue = g.all.filter((m) => m !== 'block'); // block не отвечает по определению
+        const cfg = (S.settings.groups || []).find((x) => x.name === name);
+        const url = (cfg && cfg.url) || TEST_URL;
+        const worker = async () => { while (queue.length && alive) { const m = queue.shift(); await testDelay(m, url); } };
         await Promise.all([worker(), worker(), worker(), worker()]);
-        if (alive) drawProxies(all);
+        if (!alive) return;
+        drawProxies(all);
+        const bad = g.all.filter((m) => delayErr[m]);
+        if (bad.length && bad.length === g.all.filter((m) => m !== 'block').length) {
+          toast('Ни один узел не ответил на ' + url + ': ' + delayErr[bad[0]] + '. Выберите другой адрес проверки в «Группы → Параметры проверки».', 'err');
+        }
       } }, 'Проверить задержку');
       ui.proxies.append(h('div', { style: 'margin-bottom:12px' },
         h('div', { class: 'row', style: 'margin-bottom:6px' }, h('b', name), badge(g.type), h('span', { class: 'small mute' }, 'сейчас: ' + (g.now || '—')), h('span', { class: 'grow' }), testAll),
         h('div', { class: 'chips' }, chips)));
     }
   }
-  async function testDelay(name) {
+  const delayErr = {};
+  async function testDelay(name, url) {
     try {
-      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(TEST_URL) + '&timeout=5000', { signal: ctl.signal });
-      delays[name] = (r && r.delay) || 0;
-    } catch (e) { delays[name] = 0; }
+      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=5000', { signal: ctl.signal });
+      delays[name] = (r && r.delay) || 0; delete delayErr[name];
+    } catch (e) { delays[name] = 0; delayErr[name] = (e && e.message) || 'ошибка'; }
   }
   async function loadConns() {
     try {
