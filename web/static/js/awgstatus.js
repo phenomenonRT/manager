@@ -30,3 +30,16 @@ export function delayClass(d) {
   if (d < 500) return 'warn';
   return 'slow';
 }
+
+// Читает журнал ядра и возвращает состояния туннелей: { тег: { state, tries } }.
+export async function loadAwgStates(get, signal) {
+  const r = await get('api/logs?n=1500', signal ? { signal } : undefined);
+  return parseAwgLog(((r && r.lines) || []).map((x) => (typeof x === 'string' ? x : x.text || x.line || '')));
+}
+
+// Короткая подпись и вид бейджа для состояния; debug — включён ли уровень логов debug.
+export function awgBadge(e, debug) {
+  if (e && e.state === 'ok') return { text: 'рукопожатие есть', kind: 'ok', tip: 'Туннель установлен: сервер отвечает.' };
+  if (e) return { text: 'нет рукопожатия' + (e.tries ? ' · ' + e.tries : ''), kind: 'err', tip: 'Сервер не отвечает на рукопожатие. Проверьте ключи, порт, параметры обфускации (Jc/Jmin/Jmax, S1–S4, H1–H4, I1–I5, AWG 3.0) и доступность UDP-порта.' };
+  return { text: 'нет данных', kind: '', tip: debug ? 'Событий рукопожатия ещё нет: туннель не использовался или ядро только запущено.' : 'Рукопожатие видно только на уровне логов debug («Входящие, TUN, сеть → Общие»), после перезапуска ядра.' };
+}

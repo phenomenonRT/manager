@@ -1,6 +1,7 @@
 import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, num, pw, lines, csv, sel, chk, area, modal, confirmBox, toast, toastErr, help } from '../ui.js';
 import { get, post } from '../api.js';
 import * as st from '../state.js';
+import { loadAwgStates, awgBadge } from '../awgstatus.js';
 
 const S = st.S;
 export const TYPES = [['vless', 'VLESS'], ['vmess', 'VMess'], ['trojan', 'Trojan'], ['shadowsocks', 'Shadowsocks'], ['hysteria2', 'Hysteria2'], ['tuic', 'TUIC'], ['wireguard', 'WireGuard'], ['awg', 'AmneziaWG'], ['socks', 'SOCKS5'], ['http', 'HTTP'], ['iface', 'Системный VPN (интерфейс)']];
@@ -17,16 +18,28 @@ export default async function (root) {
   const tableBox = h('div');
   const vpnBox = h('div');
 
+  // Состояние AWG-туннелей из журнала ядра (нужен уровень debug); загружается один раз при открытии страницы.
+  let awgState = null;
+  function linkBadge(n) {
+    if (!S.status || S.status.state !== 'running') return h('span', { class: 'small mute' }, 'ядро не запущено');
+    if (awgState === null) return h('span', { class: 'small mute' }, '…');
+    const b = awgBadge(awgState[n.name], (s.general || {}).log_level === 'debug');
+    const el = badge(b.text, b.kind); el.title = b.tip;
+    return el;
+  }
+  if (S.status && S.status.state === 'running' && s.nodes.some((n) => n.type === 'awg')) loadAwgStates(get).then((r) => { awgState = r; drawTable(); }).catch(() => { awgState = {}; drawTable(); });
+
   function drawTable() {
     clear(tableBox);
     if (!s.nodes.length) { tableBox.append(h('div', { class: 'empty' }, 'Узлов пока нет. Импортируйте ссылки или подписку ниже, либо добавьте узел вручную.')); return; }
     tableBox.append(h('div', { class: 'tw' }, h('table', { class: 'stack' },
-      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', ''))),
+      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', 'Связь'), h('th', ''))),
       h('tbody', s.nodes.map((n, i) => h('tr', { class: n.disabled ? 'off' : '' },
         h('td', h('input', { type: 'checkbox', checked: !n.disabled, 'aria-label': 'Включить ' + n.name, onchange: (e) => { n.disabled = !e.target.checked; st.touch(); drawTable(); } })),
         h('td', n.name, n.detour ? h('div', { class: 'small mute' }, '→ через ' + n.detour) : null),
         h('td', badge(TYPE_NAME[n.type] || n.type)),
         h('td', { class: 'mono' }, n.type === 'iface' ? '⇄ ' + (n.bind_interface || '—') : n.server + ':' + n.port),
+        h('td', n.type === 'awg' && !n.disabled ? linkBadge(n) : null),
         h('td', { class: 'act' },
           h('button', { class: 'btn sm', onclick: () => editNode(i) }, 'Изменить'), ' ',
           h('button', { class: 'btn sm', title: 'Дублировать', onclick: () => dup(i) }, '⧉'), ' ',

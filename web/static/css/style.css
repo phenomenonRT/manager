@@ -294,3 +294,7 @@ main{min-width:0}
 .gset{margin-top:12px}
 .gset summary{cursor:pointer;color:var(--mute);font-size:13px;margin-bottom:8px}
 .members .badge{margin-left:6px}.members .grow{min-width:0;word-break:break-word}
+
+.hs{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mute);flex:0 0 auto}
+.hs.ok{background:var(--ok)}.hs.err{background:var(--err)}
+.lowspace{color:var(--warn);font-weight:600}

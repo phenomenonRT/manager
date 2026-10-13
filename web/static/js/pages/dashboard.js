@@ -2,7 +2,7 @@ import { errNote, apd, h, clear, pageHead, badge, note, fmtBytes, fmtDur, toast,
 import { get, post, put, streamJSON } from '../api.js';
 import * as st from '../state.js';
 import { transparentNote } from '../transparent.js';
-import { parseAwgLog, delayClass } from '../awgstatus.js';
+import { loadAwgStates, awgBadge, delayClass } from '../awgstatus.js';
 
 const S = st.S;
 const STATE_RU = { running: 'работает', stopped: 'остановлен', starting: 'запускается', stopping: 'останавливается', error: 'ошибка', failed: 'ошибка', waiting: 'ждёт сеть' };
@@ -58,7 +58,7 @@ export default async function (root) {
       h('dt', 'Система'), h('dd', p.os_name || p.os || '—'),
       h('dt', 'Архитектура'), h('dd', (p.arch || '—') + (p.machine ? ' (' + p.machine + ')' : '')),
       h('dt', 'Память'), h('dd', p.mem_total_mb ? p.mem_total_mb + ' МБ' : '—'),
-      h('dt', 'Свободно в ' + (p.bin_dir || 'каталоге ядер')), h('dd', p.bin_free_mb != null ? p.bin_free_mb + ' МБ' : '—'),
+      h('dt', 'Свободно в ' + (p.bin_dir || 'каталоге ядер')), h('dd', p.bin_free_mb != null ? h('span', { class: p.bin_free_mb < 70 ? 'lowspace' : '', title: p.bin_free_mb < 70 ? 'Мало места: ядру нужно 30–40 МБ. Каталог установки меняется в «Компоненты».' : '' }, p.bin_free_mb + ' МБ') : '—'),
       h('dt', 'LAN-интерфейс'), h('dd', p.lan_iface || '—'),
       h('dt', 'Брандмауэр'), h('dd', p.firewall_backend || '—'),
       h('dt', 'Панель'), h('dd', (S.system && S.system.panel_version) || '—')),
@@ -80,12 +80,11 @@ export default async function (root) {
     ui.tot = h('div', { class: 'small mute' });
     ui.proxies = h('div', { class: 'card' }, h('h2', 'Выбор узла'), spinner());
     ui.conns = h('div');
-    ui.awg = h('div');
     clear(clashBox).append(
       h('div', { class: 'card' }, h('h2', 'Трафик'),
         h('div', { class: 'row', style: 'gap:28px' }, h('div', h('div', { class: 'small mute' }, '↑ отдача'), ui.up), h('div', h('div', { class: 'small mute' }, '↓ загрузка'), ui.down)),
         svg, ui.tot),
-      ui.awg, ui.proxies, ui.conns);
+      ui.proxies, ui.conns);
   }
   function drawSpark() {
     const max = Math.max(1024, ...hist.up, ...hist.down);
@@ -112,28 +111,16 @@ export default async function (root) {
     } catch (e) { if (alive) clear(ui.proxies).append(h('h2', 'Выбор узла'), note('warn', 'Не удалось получить список прокси: ' + e.message)); }
   }
   const delays = {}, busy = {};
-  // Статус туннелей AmneziaWG: ядро отдаёт его только в журнале, и только на уровне debug.
+  // Состояние туннелей AmneziaWG: ядро отдаёт его только в журнале, и только на уровне debug.
+  // Показываем точкой у узла в списке: зелёная — рукопожатие есть, красная — нет.
+  let awgState = {}, lastAll = null;
   async function loadAwg() {
-    const nodes = ((S.settings && S.settings.nodes) || []).filter((n) => n.type === 'awg' && !n.disabled);
-    if (!ui.awg || !nodes.length) { if (ui.awg) clear(ui.awg); return; }
-    let st = {};
-    try {
-      const r = await get('api/logs?n=1500', { signal: ctl.signal });
-      st = parseAwgLog(((r && r.lines) || []).map((x) => (typeof x === 'string' ? x : x.text || x.line || '')));
-    } catch (e) { return; }
-    if (!alive || !ui.awg) return;
-    const debug = (S.settings.general || {}).log_level === 'debug';
-    clear(ui.awg).append(h('div', { class: 'card' }, h('h2', 'Туннели AmneziaWG'),
-      nodes.map((n) => {
-        const e = st[n.name];
-        const badgeEl = e ? (e.state === 'ok' ? badge('рукопожатие есть', 'ok') : badge('рукопожатие не проходит' + (e.tries ? ' · попыток: ' + e.tries : ''), 'err'))
-          : badge('нет данных', '');
-        const tip = e ? (e.state === 'ok' ? '' : 'Сервер не отвечает на рукопожатие. Проверьте ключи, порт ' + n.server + ':' + n.port + ', параметры обфускации (Jc/Jmin/Jmax, S1–S4, H1–H4, I1–I5, AWG 3.0) и доступность UDP-порта.')
-          : (debug ? 'Событий рукопожатия ещё нет: ядро только запущено или туннель не использовался.' : 'Рукопожатие видно только на уровне логов debug: «Входящие, TUN, сеть → Общие → Уровень логов», затем перезапуск ядра.');
-        return h('div', { class: 'row', style: 'gap:10px;margin:4px 0;flex-wrap:wrap' }, h('b', n.name), h('span', { class: 'small mono mute' }, n.server + ':' + n.port), badgeEl, tip ? h('span', { class: 'small mute' }, tip) : null);
-      })));
+    if (!((S.settings && S.settings.nodes) || []).some((n) => n.type === 'awg' && !n.disabled)) return;
+    try { awgState = await loadAwgStates(get, ctl.signal); } catch (e) { return; }
+    if (alive && ui.proxies && lastAll) drawProxies(lastAll);
   }
   function drawProxies(all) {
+    lastAll = all;
     const groups = Object.entries(all).filter(([n, p]) => n !== 'GLOBAL' && Array.isArray(p.all));
     clear(ui.proxies).append(h('h2', 'Выбор узла'));
     if (!groups.length) { ui.proxies.append(h('div', { class: 'empty' }, 'Групп пока нет. Создайте их в разделе «Группы».')); return; }
@@ -143,11 +130,13 @@ export default async function (root) {
       const chips = g.all.map((m) => {
         const d = delays[m] !== undefined ? delays[m] : (all[m] && all[m].history && all[m].history.length ? all[m].history[all[m].history.length - 1].delay : undefined);
         const lab = busy[m] ? '…' : d === undefined ? '' : d > 0 ? d + ' мс' : 'сбой';
+        const isAwg = ((S.settings && S.settings.nodes) || []).some((n) => n.name === m && n.type === 'awg');
+        const hs = isAwg ? awgBadge(awgState[m], (S.settings.general || {}).log_level === 'debug') : null;
         // Клик по узлу проверяет его задержку; в ручной группе он ещё и выбирается.
         return h('button', {
           type: 'button', class: 'chip' + (g.now === m ? ' on' : '') + (' ' + delayClass(d)), disabled: !!busy[m],
           'aria-pressed': g.now === m ? 'true' : 'false',
-          title: (delayErr[m] ? 'Ошибка проверки: ' + delayErr[m] + '. ' : '') + (m === 'block' ? 'Блокировка не отвечает по определению' : isSel ? 'Выбрать и проверить задержку' : 'Проверить задержку'),
+          title: (hs ? 'AmneziaWG: ' + hs.text + '. ' + hs.tip + ' ' : '') + (delayErr[m] ? 'Ошибка проверки: ' + delayErr[m] + '. ' : '') + (m === 'block' ? 'Блокировка не отвечает по определению' : isSel ? 'Выбрать и проверить задержку' : 'Проверить задержку'),
           onclick: async () => {
             if (isSel) { try { await put('api/clash/proxies/' + encodeURIComponent(name), { name: m }); g.now = m; } catch (e) { toastErr(e); return; } }
             if (m === 'block') { drawProxies(all); return; }
@@ -159,7 +148,7 @@ export default async function (root) {
             if (delayErr[m]) { await loadDiag(); loadAwg(); }
             drawProxies(all);
           },
-        }, m, h('small', lab));
+        }, hs ? h('i', { class: 'hs ' + (hs.kind || 'none'), 'aria-hidden': 'true' }) : null, m, h('small', lab));
       });
       const testAll = h('button', { class: 'btn sm', onclick: async () => {
         testAll.disabled = true; testAll.textContent = 'Проверка…';
