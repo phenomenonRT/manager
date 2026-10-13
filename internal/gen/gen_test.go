@@ -391,3 +391,19 @@ func TestUrltestToleranceClamp(t *testing.T) {
 		t.Errorf("допуск не ограничен 60000 мс или интервал не 5m: %s", res.Config)
 	}
 }
+
+func TestAWG3Fields(t *testing.T) {
+	n := model.Node{Name: "a", Type: "awg", Server: "1.2.3.4", Port: 51305, PrivateKey: "K", PeerPublicKey: "P", Addresses: []string{"10.0.0.2/32"},
+		Keepalive: "25-27", AWG: &model.AWG{Jc: 5, HeaderProtectionKey: "HPK", RandomTrailers: true, RekeyTimeout: "5", ContentPadding: "11-94"}}
+	b, _ := json.Marshal(sbAWG(&model.Settings{}, n))
+	for _, w := range []string{`"header_protection_key":"HPK"`, `"random_trailers":true`, `"rekey_timeout":"5"`, `"content_padding_addition":"11-94"`, `"persistent_keepalive_interval":"25-27"`} {
+		if !strings.Contains(string(b), w) {
+			t.Errorf("нет %s в %s", w, b)
+		}
+	}
+	n.Keepalive = ""
+	b, _ = json.Marshal(sbAWG(&model.Settings{}, n))
+	if !strings.Contains(string(b), `"persistent_keepalive_interval":25`) {
+		t.Errorf("по умолчанию keepalive должен быть числом 25: %s", b)
+	}
+}

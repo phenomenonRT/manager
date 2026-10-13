@@ -66,10 +66,10 @@ export default async function (root) {
     try { applyImport(await fn()); } catch (e) { toastErr(e); }
     btn.disabled = false;
   };
-  const ta = area(imp, 'text', { rows: 5, ph: 'vless://…\nvmess://…\ntrojan://…\nss://…\nhysteria2://…\ntuic://…\nили подписка в base64, или содержимое WireGuard .conf' });
+  const ta = area(imp, 'text', { rows: 5, ph: 'vless://…\nvmess://…\ntrojan://…\nss://…\nhysteria2://…\ntuic://…\nили подписка в base64, или содержимое WireGuard/AWG .conf, или JSON endpoint awg' });
   const bText = h('button', { class: 'btn primary' }, 'Разобрать и добавить');
   bText.onclick = runImport(bText, () => { if (!imp.text.trim()) throw new Error('Вставьте ссылки или конфигурацию'); return post('api/import', { text: imp.text }); });
-  const fileIn = h('input', { type: 'file', accept: '.conf,.txt,text/plain', 'aria-label': 'Файл конфигурации', onchange: async (e) => { const f = e.target.files[0]; if (f) { ta.value = imp.text = await f.text(); e.target.value = ''; } } });
+  const fileIn = h('input', { type: 'file', accept: '.conf,.txt,.json,text/plain,application/json', 'aria-label': 'Файл конфигурации', onchange: async (e) => { const f = e.target.files[0]; if (f) { ta.value = imp.text = await f.text(); e.target.value = ''; } } });
   const urlIn = txt(imp, 'url', { ph: 'https://example.com/sub?token=…' });
   const bUrl = h('button', { class: 'btn' }, 'Загрузить подписку');
   bUrl.onclick = runImport(bUrl, () => { if (!imp.url.trim()) throw new Error('Укажите URL подписки'); return post('api/import/url', { url: imp.url.trim() }); });
@@ -93,7 +93,7 @@ export default async function (root) {
     h('div', { class: 'row', style: 'margin-bottom:10px' }, h('button', { class: 'btn primary', onclick: () => editNode(-1) }, '+ Добавить узел'), h('span', { class: 'mute small' }, 'Узлов: ' + s.nodes.length)),
     tableBox,
     h('div', { class: 'card', style: 'margin-top:14px' }, h('h2', 'Импорт'),
-      field('Ссылки, подписка или WireGuard-конфиг', ta, 'Можно вставить несколько ссылок по одной в строке, содержимое подписки (base64) или текст файла .conf.'),
+      field('Ссылки, подписка или WireGuard-конфиг', ta, 'Можно вставить несколько ссылок по одной в строке, содержимое подписки (base64) или текст файла .conf; для AmneziaWG — также JSON с endpoint типа awg (бэкап другой панели или секция endpoints из конфига sing-box).'),
       h('div', { class: 'row', style: 'margin-bottom:12px' }, bText, fileIn),
       h('div', { class: 'row', style: 'align-items:flex-end' }, h('div', { class: 'grow', style: 'min-width:220px' }, field('Подписка по URL', urlIn)), h('div', { style: 'margin-bottom:10px' }, bUrl)),
       impRes),
@@ -204,7 +204,18 @@ function nodeForm(d, rebuild) {
       fgrid(field('Jc', num(a, 'jc', { min: 0 })), field('Jmin', num(a, 'jmin', { min: 0 })), field('Jmax', num(a, 'jmax', { min: 0 })),
         field('S1', num(a, 's1', { min: 0 })), field('S2', num(a, 's2', { min: 0 })), field('S3', num(a, 's3', { min: 0 })), field('S4', num(a, 's4', { min: 0 })),
         field('H1', txt(a, 'h1', { ph: '123456 или 100-200' })), field('H2', txt(a, 'h2')), field('H3', txt(a, 'h3')), field('H4', txt(a, 'h4')),
-        field('I1', txt(a, 'i1', { ph: '<b 0x…>' })), field('I2', txt(a, 'i2')), field('I3', txt(a, 'i3')), field('I4', txt(a, 'i4')), field('I5', txt(a, 'i5')))));
+        field('I1', txt(a, 'i1', { ph: '<b 0x…>' })), field('I2', txt(a, 'i2')), field('I3', txt(a, 'i3')), field('I4', txt(a, 'i4')), field('I5', txt(a, 'i5'))),
+      h('details', { style: 'margin-top:10px' }, h('summary', { class: 'small' }, 'AmneziaWG 3.0 и тонкая настройка (если этого требует сервер)'),
+        h('p', { class: 'small mute' }, 'Заполняйте только то, что есть в конфиге сервера. Пустое поле не передаётся ядру. Диапазоны пишутся как «25-27».'),
+        fgrid(field('Header protection key', pw(a, 'header_protection_key'), 'Ключ защиты заголовков AWG 3.0. Если на сервере он задан, а здесь пуст, рукопожатие не пройдёт.'),
+          field('Content padding addition', txt(a, 'content_padding_addition', { ph: '11-94' })),
+          field('Persistent keepalive, сек', txt(d, 'keepalive', { ph: '25 или 25-27' }), 'Пусто — 25.'),
+          field('Keepalive timeout', txt(a, 'keepalive_timeout', { ph: '10-24' })),
+          field('Max handshake attempts', txt(a, 'max_handshake_attempts', { ph: '16' })),
+          field('Rekey timeout', txt(a, 'rekey_timeout', { ph: '5' })),
+          field('Rekey after time', txt(a, 'rekey_after_time', { ph: '121-154' })),
+          field('Reject after time', txt(a, 'reject_after_time', { ph: '187-200' }))),
+        h('div', { class: 'row', style: 'gap:16px;margin-top:6px' }, chk(a, 'random_trailers', 'Random trailers'), chk(a, 'disable_cookies', 'Disable cookies')))));
   } else if (t === 'wireguard') {
     const pub = h('div', { class: 'small mono', style: 'word-break:break-all;margin:-4px 0 8px' });
     const gen = h('button', { type: 'button', class: 'btn sm', onclick: async () => {

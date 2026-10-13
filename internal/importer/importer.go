@@ -29,6 +29,14 @@ func Parse(text string) Result {
 		res.Errors = append(res.Errors, "пустой ввод")
 		return res
 	}
+	if (strings.HasPrefix(text, "[") || strings.HasPrefix(text, "{")) && strings.Contains(text, `"awg"`) {
+		nodes, err := ParseAWGJSON(text)
+		if err != nil {
+			res.Errors = append(res.Errors, err.Error())
+		}
+		res.Nodes = append(res.Nodes, nodes...)
+		return res
+	}
 	if strings.Contains(text, "[Interface]") && strings.Contains(text, "[Peer]") {
 		n, err := ParseWireGuardConf(text)
 		if err != nil {
@@ -518,6 +526,10 @@ func ParseWireGuardConf(text string) (model.Node, error) {
 			case "jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5":
 				amnezia = true
 				setAWG(&awg, k, v)
+			default:
+				if setAWGExtra(&awg, k, v) {
+					amnezia = true
+				}
 			}
 		case "peer":
 			if peers > 1 {
@@ -528,6 +540,8 @@ func ParseWireGuardConf(text string) (model.Node, error) {
 				n.PeerPublicKey = v
 			case "presharedkey":
 				n.PreSharedKey = v
+			case "persistentkeepalive":
+				n.Keepalive = v
 			case "allowedips":
 				n.AllowedIPs = splitList(v)
 			case "endpoint":
@@ -589,6 +603,159 @@ func setAWG(a *model.AWG, k, v string) {
 	case "i5":
 		a.I5 = v
 	}
+}
+
+// extraKey приводит имя ключа к виду «headerprotectionkey» — в .conf встречаются и CamelCase, и snake_case.
+func extraKey(k string) string {
+	return strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(strings.TrimSpace(k)))
+}
+
+// setAWGExtra записывает параметры AmneziaWG 3.0; возвращает false, если ключ не из этого набора.
+func setAWGExtra(a *model.AWG, k, v string) bool {
+	on := func() bool { b, _ := strconv.ParseBool(strings.TrimSpace(v)); return b }
+	switch extraKey(k) {
+	case "headerprotectionkey":
+		a.HeaderProtectionKey = v
+	case "contentpaddingaddition", "contentpadding":
+		a.ContentPadding = v
+	case "disablecookies":
+		a.DisableCookies = on()
+	case "randomtrailers":
+		a.RandomTrailers = on()
+	case "keepalivetimeout":
+		a.KeepaliveTimeout = v
+	case "maxhandshakeattempts":
+		a.MaxHandshakeAttempts = v
+	case "rejectaftertime":
+		a.RejectAfterTime = v
+	case "rekeyaftertime":
+		a.RekeyAfterTime = v
+	case "rekeytimeout":
+		a.RekeyTimeout = v
+	default:
+		return false
+	}
+	return true
+}
+
+func jStr(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(x)
+	}
+	return ""
+}
+
+func jInt(v any) int {
+	switch x := v.(type) {
+	case float64:
+		return int(x)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(x))
+		return n
+	}
+	return 0
+}
+
+func jBool(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case string:
+		b, _ := strconv.ParseBool(strings.TrimSpace(x))
+		return b
+	}
+	return false
+}
+
+func jList(v any) []string {
+	switch x := v.(type) {
+	case string:
+		return splitList(x)
+	case []any:
+		var out []string
+		for _, e := range x {
+			if s := strings.TrimSpace(jStr(e)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ParseAWGJSON разбирает endpoint(ы) типа awg из JSON: массив бэкапа awg-manager
+// ([{"tag":…,"endpoint":{…}}]), список endpoints из конфига sing-box или один объект.
+func ParseAWGJSON(text string) ([]model.Node, error) {
+	var root any
+	if err := json.Unmarshal([]byte(text), &root); err != nil {
+		return nil, fmt.Errorf("неверный JSON: %v", err)
+	}
+	var items []any
+	switch r := root.(type) {
+	case []any:
+		items = r
+	case map[string]any:
+		if eps, ok := r["endpoints"].([]any); ok {
+			items = eps
+		} else {
+			items = []any{r}
+		}
+	}
+	var nodes []model.Node
+	for _, it := range items {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		tag := jStr(m["tag"])
+		if ep, ok := m["endpoint"].(map[string]any); ok {
+			m = ep
+		}
+		if jStr(m["type"]) != "awg" {
+			continue
+		}
+		if tag == "" {
+			tag = jStr(m["tag"])
+		}
+		n := model.Node{Type: "awg", UDP: true, Name: tag, PrivateKey: jStr(m["private_key"]), Addresses: jList(m["address"]), MTU: jInt(m["mtu"]),
+			System: jBool(m["useIntegratedTun"])}
+		a := model.AWG{Jc: jInt(m["jc"]), Jmin: jInt(m["jmin"]), Jmax: jInt(m["jmax"]), S1: jInt(m["s1"]), S2: jInt(m["s2"]), S3: jInt(m["s3"]), S4: jInt(m["s4"]),
+			H1: jStr(m["h1"]), H2: jStr(m["h2"]), H3: jStr(m["h3"]), H4: jStr(m["h4"]),
+			I1: jStr(m["i1"]), I2: jStr(m["i2"]), I3: jStr(m["i3"]), I4: jStr(m["i4"]), I5: jStr(m["i5"])}
+		for _, k := range []string{"header_protection_key", "content_padding_addition", "disable_cookies", "random_trailers", "keepalive_timeout",
+			"max_handshake_attempts", "reject_after_time", "rekey_after_time", "rekey_timeout"} {
+			if v, ok := m[k]; ok {
+				setAWGExtra(&a, k, jStr(v))
+			}
+		}
+		n.AWG = &a
+		if peers, ok := m["peers"].([]any); ok && len(peers) > 0 {
+			if pm, ok := peers[0].(map[string]any); ok {
+				n.Server = jStr(pm["address"])
+				n.Port = jInt(pm["port"])
+				n.PeerPublicKey = jStr(pm["public_key"])
+				n.PreSharedKey = firstNonEmpty(jStr(pm["preshared_key"]), jStr(pm["pre_shared_key"]))
+				n.AllowedIPs = jList(pm["allowed_ips"])
+				n.Keepalive = jStr(pm["persistent_keepalive_interval"])
+			}
+		}
+		if n.PrivateKey == "" || n.PeerPublicKey == "" || n.Server == "" || n.Port == 0 || len(n.Addresses) == 0 {
+			return nodes, fmt.Errorf("в endpoint «%s» не хватает private_key, address или данных пира (address, port, public_key)", tag)
+		}
+		if n.Name == "" {
+			n.Name = "awg-" + n.Server
+		}
+		nodes = append(nodes, n)
+	}
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("в JSON не найдено endpoint с type «awg»")
+	}
+	return nodes, nil
 }
 
 // UniqueName подбирает свободное имя, добавляя числовой суффикс.

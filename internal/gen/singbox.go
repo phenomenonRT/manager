@@ -486,8 +486,12 @@ func sbAWG(s *model.Settings, n model.Node) *O {
 		allowed = []string{"0.0.0.0/0", "::/0"}
 	}
 	// поля — по схеме amnezia-box: preshared_key (без подчёркивания), useIntegratedTun вместо system
+	var keepalive any = 25
+	if k := strings.TrimSpace(n.Keepalive); k != "" {
+		keepalive = k
+	}
 	peer := NewO().Set("address", n.Server).Set("port", n.Port).Set("public_key", n.PeerPublicKey).
-		Opt("preshared_key", n.PreSharedKey).Set("allowed_ips", allowed).Set("persistent_keepalive_interval", 25)
+		Opt("preshared_key", n.PreSharedKey).Set("allowed_ips", allowed).Set("persistent_keepalive_interval", keepalive)
 	o := NewO().Set("type", "awg").Set("tag", n.Name).
 		Opt("useIntegratedTun", n.System).Opt("mtu", n.MTU).
 		Set("address", n.Addresses).Set("private_key", n.PrivateKey)
@@ -495,7 +499,11 @@ func sbAWG(s *model.Settings, n model.Node) *O {
 		o.Opt("jc", a.Jc).Opt("jmin", a.Jmin).Opt("jmax", a.Jmax).
 			Opt("s1", a.S1).Opt("s2", a.S2).Opt("s3", a.S3).Opt("s4", a.S4).
 			Opt("h1", a.H1).Opt("h2", a.H2).Opt("h3", a.H3).Opt("h4", a.H4).
-			Opt("i1", a.I1).Opt("i2", a.I2).Opt("i3", a.I3).Opt("i4", a.I4).Opt("i5", a.I5)
+			Opt("i1", a.I1).Opt("i2", a.I2).Opt("i3", a.I3).Opt("i4", a.I4).Opt("i5", a.I5).
+			Opt("header_protection_key", a.HeaderProtectionKey).Opt("content_padding_addition", a.ContentPadding).
+			Opt("disable_cookies", a.DisableCookies).Opt("random_trailers", a.RandomTrailers).
+			Opt("keepalive_timeout", a.KeepaliveTimeout).Opt("max_handshake_attempts", a.MaxHandshakeAttempts).
+			Opt("reject_after_time", a.RejectAfterTime).Opt("rekey_after_time", a.RekeyAfterTime).Opt("rekey_timeout", a.RekeyTimeout)
 	}
 	o.Set("peers", []any{peer})
 	sbDial(o, s, n)

@@ -138,7 +138,8 @@ type Node struct {
 	AllowedIPs    []string `json:"allowed_ips,omitempty"`
 	Reserved      []int    `json:"reserved,omitempty"`
 	MTU           int      `json:"mtu,omitempty"`
-	System        bool     `json:"system,omitempty"` // sing-box: создать системный интерфейс wg
+	Keepalive     string   `json:"keepalive,omitempty"` // AWG: persistent_keepalive_interval, число или диапазон «25-27»; пусто = 25
+	System        bool     `json:"system,omitempty"`    // sing-box: создать системный интерфейс wg
 
 	AWG *AWG `json:"awg,omitempty"` // параметры AmneziaWG (тип узла awg, только ядро amnezia-box)
 
@@ -165,6 +166,18 @@ type AWG struct {
 	I3   string `json:"i3,omitempty"`
 	I4   string `json:"i4,omitempty"`
 	I5   string `json:"i5,omitempty"`
+
+	// AmneziaWG 3.0 и тонкая настройка рукопожатия. Строки передаются ядру как есть
+	// (там бывают диапазоны «25-27»), пустые не передаются.
+	HeaderProtectionKey  string `json:"header_protection_key,omitempty"`
+	ContentPadding       string `json:"content_padding_addition,omitempty"`
+	DisableCookies       bool   `json:"disable_cookies,omitempty"`
+	RandomTrailers       bool   `json:"random_trailers,omitempty"`
+	KeepaliveTimeout     string `json:"keepalive_timeout,omitempty"`
+	MaxHandshakeAttempts string `json:"max_handshake_attempts,omitempty"`
+	RejectAfterTime      string `json:"reject_after_time,omitempty"`
+	RekeyAfterTime       string `json:"rekey_after_time,omitempty"`
+	RekeyTimeout         string `json:"rekey_timeout,omitempty"`
 }
 
 // Group — группа узлов.
