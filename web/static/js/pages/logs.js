@@ -1,4 +1,4 @@
-import { apd, h, clear, pageHead, sel, note, toastErr } from '../ui.js';
+import { apd, h, clear, pageHead, sel, note, toast, toastErr, copy } from '../ui.js';
 import { get } from '../api.js';
 
 const LV = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -41,6 +41,11 @@ export default async function (root) {
       h('input', { type: 'text', style: 'flex:1;min-width:140px;max-width:300px', placeholder: 'Фильтр по тексту', 'aria-label': 'Фильтр по тексту', oninput: (e) => { f.text = e.target.value; redraw(); } }),
       h('label', { class: 'check', style: 'margin:0' }, h('input', { type: 'checkbox', checked: true, onchange: (e) => { f.auto = e.target.checked; if (f.auto) view.scrollTop = view.scrollHeight; } }), 'автопрокрутка'),
       h('button', { class: 'btn', onclick: (e) => { f.pause = !f.pause; e.target.textContent = f.pause ? 'Продолжить' : 'Пауза'; if (!f.pause) redraw(); } }, 'Пауза'),
+      h('button', { class: 'btn', title: 'Копирует строки, которые сейчас видны с учётом фильтров', onclick: () => {
+        const lines = all.filter(pass).map((l) => l.t);
+        if (!lines.length) { toast('Копировать нечего: в журнале нет записей', 'err'); return; }
+        copy(lines.join('\n'));
+      } }, 'Копировать'),
       h('button', { class: 'btn', onclick: () => { all = []; redraw(); } }, 'Очистить'), state), view);
   try {
     const r = await get('api/logs?n=300');
