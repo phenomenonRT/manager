@@ -1,4 +1,4 @@
-import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, num, sel, toast, confirmBox } from '../ui.js';
+import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, num, dur, sel, toast, confirmBox } from '../ui.js';
 import * as st from '../state.js';
 
 const S = st.S;
@@ -141,8 +141,8 @@ export default async function (root) {
       g.type !== 'selector' ? h('details', { class: 'gset' }, h('summary', 'Параметры проверки'),
         fgrid(
           field('Чем проверять узел', probePick(g, draw), 'Ядро делает запрос по этому адресу через каждый узел и меряет время ответа. Обычный ping (ICMP) ядро не умеет, поэтому используется HTTP(S). Адреса «по IP» работают, даже если DNS не отвечает. Нужен ответ без редиректов, лучше всего подходят адреса generate_204.'),
-          field('Интервал, сек', num(g, 'interval', { min: 10 }), 'Как часто проверять узлы. При обрыве реального соединения ядро переключается сразу, не дожидаясь проверки.'),
-          g.type === 'urltest' ? field('Допуск, мс', num(g, 'tolerance', { min: 0 }), 'Не переключаться на другой узел, если он быстрее меньше чем на это значение (защита от «дрожания»).') : null)) : null);
+          field('Интервал проверки', dur(g, 'interval', [['сек', 1], ['мин', 60], ['ч', 3600]], { min: 10 }), 'Как часто проверять узлы. При обрыве реального соединения ядро переключается сразу, не дожидаясь проверки.'),
+          g.type === 'urltest' ? field('Допуск', dur(g, 'tolerance', [['мс', 1], ['сек', 1000]], { min: 0, max: 65535 }), 'Не переключаться на другой узел, если он быстрее меньше чем на это значение (защита от «дрожания»).') : null)) : null);
   }
 
   apd(root, pageHead('Группы', 'Группа выбирает, через какой из узлов пойдёт трафик. Обычно хватает одной.'),

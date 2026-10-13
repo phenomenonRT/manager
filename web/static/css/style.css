@@ -47,6 +47,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 .check{display:flex;align-items:center;gap:8px;margin:2px 0 8px;cursor:pointer}
 .check input{width:16px;height:16px;accent-color:var(--accent);margin:0}
 .pw{display:flex;gap:4px}.pw input{flex:1}
+.durbox{display:flex;gap:6px}.durbox input{flex:1;min-width:0}.durbox select{width:auto;flex:0 0 auto}
 .help{display:inline-grid;place-items:center;width:15px;height:15px;margin-left:5px;border:1px solid var(--line);border-radius:50%;font-size:10px;color:var(--mute);cursor:help;position:relative;vertical-align:1px;background:var(--surface2)}
 .help:hover::after,.help:focus::after{content:attr(data-tip);position:absolute;z-index:40;left:50%;bottom:150%;transform:translateX(-30%);width:max-content;max-width:min(280px,70vw);padding:6px 9px;background:var(--ink);color:var(--bg);border-radius:var(--r);font-size:12px;line-height:1.35;font-family:var(--sans);white-space:normal;text-align:left}
 /* buttons */

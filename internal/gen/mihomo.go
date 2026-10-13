@@ -499,3 +499,10 @@ func v6suffix(c string) string {
 	}
 	return ""
 }
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

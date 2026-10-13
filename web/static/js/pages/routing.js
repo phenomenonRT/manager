@@ -1,4 +1,4 @@
-import { apd, h, clear, pageHead, note, field, fgrid, txt, num, sel, chk, toast, help } from '../ui.js';
+import { apd, h, clear, pageHead, note, field, fgrid, txt, num, dur, sel, chk, toast, help } from '../ui.js';
 import { ruleEditor } from '../rules.js';
 import * as st from '../state.js';
 import { transparentNote } from '../transparent.js';
@@ -66,7 +66,7 @@ export default async function (root) {
         h('details', { style: 'margin-top:6px' }, h('summary', { class: 'small' }, 'Дополнительно: имя, формат, обновление'),
           fgrid(field('Имя', txt(r, 'name', { ph: 'my-set', onchange: () => { const c = ruleOf(prev); if (c) c.values = [r.name]; prev = r.name; ed.redraw(); } }), 'Внутреннее имя набора; в правилах он выбирается по нему.'),
             field('Формат', sel(r, 'format', [['', 'определить по URL'], ['srs', 'srs (бинарный)'], ['json', 'json (текстовый)']]), 'Обычно определяется по окончанию ссылки.'),
-            field('Обновлять, сек', num(r, 'interval', { min: 0 }), '86400 = раз в сутки. 0 — по умолчанию.')))));
+            field('Обновлять раз в', dur(r, 'interval', [['сек', 1], ['мин', 60], ['ч', 3600], ['сут', 86400]], { min: 0 }), 'По умолчанию раз в сутки. 0 — значение по умолчанию.')))));
     });
   }
 

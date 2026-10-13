@@ -322,7 +322,7 @@ func sbOutbounds(s *model.Settings, p *plan) ([]any, []any) {
 			o.Set("type", "urltest").Set("outbounds", members).
 				Set("url", orDefault(g.URL, "https://www.gstatic.com/generate_204")).
 				Set("interval", durStr(g.Interval)).
-				Opt("tolerance", g.Tolerance)
+				Opt("tolerance", minInt(g.Tolerance, fallbackTolerance))
 		default:
 			o.Set("type", "selector").Set("outbounds", members)
 			p.warn("группа «%s»: неизвестный тип «%s», использован selector", g.Name, g.Type)

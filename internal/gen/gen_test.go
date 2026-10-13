@@ -378,3 +378,16 @@ func TestSingboxFallbackOrder(t *testing.T) {
 		t.Errorf("порядок участников нарушен")
 	}
 }
+
+func TestUrltestToleranceClamp(t *testing.T) {
+	s := model.Default()
+	s.Nodes = []model.Node{{Name: "a", Type: "shadowsocks", Server: "1.1.1.1", Port: 1, Method: "aes-128-gcm", Password: "x"}}
+	s.Groups = []model.Group{{Name: "u", Type: "urltest", Members: []string{"a"}, Interval: 300, Tolerance: 120000}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Config, `"tolerance": 60000`) || !strings.Contains(res.Config, `"interval": "5m"`) {
+		t.Errorf("допуск не ограничен 60000 мс или интервал не 5m: %s", res.Config)
+	}
+}

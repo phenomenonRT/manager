@@ -114,6 +114,22 @@ export function num(obj, key, o = {}) {
     oninput: (e) => { const v = parseInt(e.target.value, 10); obj[key] = Number.isFinite(v) ? v : 0; fire(o); },
   });
 }
+// Число с выбором единицы: значение хранится в базовой единице (units[0][1] = 1), а вводится в удобной.
+// units — [[подпись, множитель], …]; по умолчанию показывается самая крупная единица, на которую значение делится нацело.
+export function dur(obj, key, units, o = {}) {
+  const v0 = Number(obj[key]) || 0;
+  let cur = units[0];
+  if (v0 > 0) for (const u of units) if (v0 % u[1] === 0 && u[1] >= cur[1]) cur = u;
+  const inp = h('input', {
+    type: 'number', inputmode: 'numeric', min: 0,
+    oninput: (e) => { const v = parseFloat(e.target.value); obj[key] = Number.isFinite(v) ? Math.round(v * cur[1]) : 0; fire(o); },
+  });
+  const show = () => { inp.value = (Number(obj[key]) || 0) / cur[1]; inp.min = o.min != null ? Math.ceil(o.min / cur[1]) : 0; if (o.max != null) inp.max = Math.floor(o.max / cur[1]); };
+  show();
+  const sl = h('select', { 'aria-label': 'Единица измерения', onchange: (e) => { cur = units.find((u) => u[0] === e.target.value) || cur; show(); } },
+    units.map((u) => h('option', { value: u[0], selected: u === cur }, u[0])));
+  return h('div', { class: 'durbox' }, inp, sl);
+}
 export function pw(obj, key, o = {}) {
   const i = txt(obj, key, { ...o, type: 'password' });
   const b = h('button', {
