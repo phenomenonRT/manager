@@ -144,7 +144,10 @@ export default async function (root) {
           const errMsg = delayErr[bad[0]];
           await loadDiag(); drawProxies(all);
           const dnsFail = (diag || []).some((x) => /lookup failed|dns:.*(timeout|deadline)/i.test(x));
-          toast(dnsFail
+          const hsFail = (diag || []).some((x) => /handshake did not complete/i.test(x)) && !(diag || []).some((x) => /received handshake response/i.test(x));
+          toast(hsFail
+            ? 'Туннель AWG не поднялся: ядро отправляет рукопожатие, но сервер не отвечает. Это не DNS и не адрес проверки. Сверьте с сервером ключи (PrivateKey, PublicKey, PresharedKey), Jc/Jmin/Jmax, S1–S4, H1–H4 и I1–I5 — они должны совпадать до символа. Проверьте, что UDP-порт сервера доступен с роутера (провайдер часто режет нестандартные UDP) и что конфиг работает в официальном клиенте AmneziaWG.'
+            : dnsFail
             ? 'Узлы не проверены: ядро не смогло определить адрес ' + hostOf(url) + ' (DNS не ответил за отведённое время). Это не обязательно сбой VPN. Выберите проверку «по IP» в «Группы → Параметры проверки» и посмотрите «DNS»: если трафик DNS идёт напрямую (Final = direct), DoH/DoT часто режутся провайдером. Задайте «Remote через» — группу.'
             : 'Ни один узел не ответил на ' + url + ' за 10 с (' + errMsg + '). Проверьте адрес, ключи и параметры AWG узла, интерфейс WAN и «Интерфейс по умолчанию» (при TUN). Подробности — в блоке ниже и в «Логи».', 'err');
         }
