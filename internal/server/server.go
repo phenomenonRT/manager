@@ -757,8 +757,21 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 	}
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort(host, port)}
 	secret := set.General.Secret
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+	}
 	rp := &httputil.ReverseProxy{
 		FlushInterval: -1,
+		Transport:     transport,
 		Director: func(req *http.Request) {
 			req.URL.Scheme, req.URL.Host = target.Scheme, target.Host
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/clash")

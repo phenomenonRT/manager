@@ -10,6 +10,8 @@ const MODES = {
 };
 // Чем проверять узел. Ядро делает HTTP(S)-запрос через узел (ICMP-пинг ядро не умеет).
 // Адреса-IP работают, даже если DNS не отвечает.
+// Важно: адрес должен отвечать по HTTPS (порт 443). DNS-серверы (8.8.8.8, 8.8.4.4) не подходят —
+// они работают на порту 53 и не отвечают на HTTP-запросы, что вызывает таймаут.
 const PROBES = [
   ['https://www.gstatic.com/generate_204', 'Google (gstatic) — по умолчанию'],
   ['https://cp.cloudflare.com/generate_204', 'Cloudflare'],
@@ -17,7 +19,7 @@ const PROBES = [
   ['http://connectivitycheck.gstatic.com/generate_204', 'Google, без HTTPS'],
   ['http://www.msftconnecttest.com/connecttest.txt', 'Microsoft, без HTTPS'],
   ['https://1.1.1.1', 'по IP: Cloudflare 1.1.1.1 (без DNS)'],
-  ['https://8.8.8.8', 'по IP: Google 8.8.8.8 (без DNS)'],
+  ['https://9.9.9.9', 'по IP: Quad9 9.9.9.9 (без DNS)'],
 ];
 const CUSTOM = '__custom';
 function probePick(g, redraw) {

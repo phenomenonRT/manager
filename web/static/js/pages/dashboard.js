@@ -139,7 +139,7 @@ export default async function (root) {
         drawProxies(all);
         const bad = g.all.filter((m) => delayErr[m]);
         if (bad.length && bad.length === g.all.filter((m) => m !== 'block').length) {
-          toast('Ни один узел не ответил на ' + url + ': ' + delayErr[bad[0]] + '. Выберите другой адрес проверки в «Группы → Параметры проверки».', 'err');
+          toast('Ни один узел не ответил на ' + url + ': ' + delayErr[bad[0]] + '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение. Выберите другой адрес в «Группы → Параметры проверки».', 'err');
         }
       } }, 'Проверить задержку');
       ui.proxies.append(h('div', { style: 'margin-bottom:12px' },
@@ -152,7 +152,15 @@ export default async function (root) {
     try {
       const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=5000', { signal: ctl.signal });
       delays[name] = (r && r.delay) || 0; delete delayErr[name];
-    } catch (e) { delays[name] = 0; delayErr[name] = (e && e.message) || 'ошибка'; }
+    } catch (e) {
+      delays[name] = 0;
+      delayErr[name] = (e && e.message) || 'ошибка';
+      // Если ошибка связана с таймаутом или 504, даём подсказку
+      const msg = delayErr[name].toLowerCase();
+      if (msg.includes('timeout') || msg.includes('gateway') || msg.includes('504') || msg.includes('deadline')) {
+        delayErr[name] += '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение';
+      }
+    }
   }
   async function loadConns() {
     try {
