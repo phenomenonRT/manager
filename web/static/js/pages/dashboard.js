@@ -140,15 +140,8 @@ export default async function (root) {
         const bad = g.all.filter((m) => delayErr[m]);
         const total = g.all.filter((m) => m !== 'block').length;
         if (bad.length && bad.length === total) {
-          let errMsg = delayErr[bad[0]];
-          const lowerErr = errMsg.toLowerCase();
-          if (!lowerErr.includes('возможно')) {
-            errMsg += '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение';
-          }
-          if (lowerErr.includes('gateway') || lowerErr.includes('504')) {
-            errMsg += '. Проверьте, что ядро запущено и nginx имеет proxy_read_timeout ≥ 30s';
-          }
-          toast('Ни один узел не ответил на ' + url + ': ' + errMsg + '. Выберите другой адрес в «Группы → Параметры проверки».', 'err');
+          const errMsg = delayErr[bad[0]];
+          toast('Ни один узел не ответил на ' + url + ' за 10 с (' + errMsg + '). Скорее всего, VPN-соединение не поднялось: посмотрите «Логи» ядра, проверьте адрес и ключи узла, интерфейс WAN и поле «Интерфейс по умолчанию» (при TUN). Если узлы рабочие — выберите другой адрес в «Группы → Параметры проверки».', 'err');
         }
       } }, 'Проверить задержку');
       ui.proxies.append(h('div', { style: 'margin-bottom:12px' },
@@ -159,16 +152,11 @@ export default async function (root) {
   const delayErr = {};
   async function testDelay(name, url) {
     try {
-      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=5000', { signal: ctl.signal });
+      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=10000', { signal: ctl.signal });
       delays[name] = (r && r.delay) || 0; delete delayErr[name];
     } catch (e) {
       delays[name] = 0;
-      let msg = (e && e.message) || 'ошибка';
-      // Если ошибка связана с таймаутом или 504, даём подсказку (один раз, без дублирования)
-      const lower = msg.toLowerCase();
-      if (!lower.includes('возможно') && (lower.includes('timeout') || lower.includes('gateway') || lower.includes('504') || lower.includes('deadline'))) {
-        msg += '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение';
-      }
+      const msg = (e && e.message) || 'ошибка';
       delayErr[name] = msg;
     }
   }
