@@ -769,6 +769,10 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: 15 * time.Second,
 	}
+	// Таймаут на весь запрос к ядру (включая проверку задержки узла)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
 	rp := &httputil.ReverseProxy{
 		FlushInterval: -1,
 		Transport:     transport,

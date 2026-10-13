@@ -138,8 +138,17 @@ export default async function (root) {
         if (!alive) return;
         drawProxies(all);
         const bad = g.all.filter((m) => delayErr[m]);
-        if (bad.length && bad.length === g.all.filter((m) => m !== 'block').length) {
-          toast('Ни один узел не ответил на ' + url + ': ' + delayErr[bad[0]] + '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение. Выберите другой адрес в «Группы → Параметры проверки».', 'err');
+        const total = g.all.filter((m) => m !== 'block').length;
+        if (bad.length && bad.length === total) {
+          let errMsg = delayErr[bad[0]];
+          const lowerErr = errMsg.toLowerCase();
+          if (!lowerErr.includes('возможно')) {
+            errMsg += '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение';
+          }
+          if (lowerErr.includes('gateway') || lowerErr.includes('504')) {
+            errMsg += '. Проверьте, что ядро запущено и nginx имеет proxy_read_timeout ≥ 30s';
+          }
+          toast('Ни один узел не ответил на ' + url + ': ' + errMsg + '. Выберите другой адрес в «Группы → Параметры проверки».', 'err');
         }
       } }, 'Проверить задержку');
       ui.proxies.append(h('div', { style: 'margin-bottom:12px' },
@@ -154,12 +163,13 @@ export default async function (root) {
       delays[name] = (r && r.delay) || 0; delete delayErr[name];
     } catch (e) {
       delays[name] = 0;
-      delayErr[name] = (e && e.message) || 'ошибка';
-      // Если ошибка связана с таймаутом или 504, даём подсказку
-      const msg = delayErr[name].toLowerCase();
-      if (msg.includes('timeout') || msg.includes('gateway') || msg.includes('504') || msg.includes('deadline')) {
-        delayErr[name] += '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение';
+      let msg = (e && e.message) || 'ошибка';
+      // Если ошибка связана с таймаутом или 504, даём подсказку (один раз, без дублирования)
+      const lower = msg.toLowerCase();
+      if (!lower.includes('возможно') && (lower.includes('timeout') || lower.includes('gateway') || lower.includes('504') || lower.includes('deadline'))) {
+        msg += '. Возможно, адрес не отвечает по HTTPS или сеть блокирует соединение';
       }
+      delayErr[name] = msg;
     }
   }
   async function loadConns() {
