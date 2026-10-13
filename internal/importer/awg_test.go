@@ -42,3 +42,18 @@ func TestParseAWGJSONBroken(t *testing.T) {
 		t.Error("ожидалась ошибка о нехватке данных")
 	}
 }
+
+func TestParseAWGConfFlagsAndAddress(t *testing.T) {
+	conf := "[Interface]\nPrivateKey = PRIV\nAddress = 10.0.0.2, fd00::2\nJc = 4\nRandomTrailers = on\nDisableCookies = off\nListenPort = 1234\nDNS = 1.1.1.1\n" +
+		"[Peer]\nPublicKey = PUB\nEndpoint = 203.0.113.5:51305\nAllowedIPs = 0.0.0.0/0\n"
+	n, err := ParseWireGuardConf(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(n.Addresses) != 2 || n.Addresses[0] != "10.0.0.2/32" || n.Addresses[1] != "fd00::2/128" {
+		t.Errorf("адреса без маски не дополнены: %v", n.Addresses)
+	}
+	if n.AWG == nil || !n.AWG.RandomTrailers || n.AWG.DisableCookies {
+		t.Errorf("флаги on/off разобраны неверно: %+v", n.AWG)
+	}
+}

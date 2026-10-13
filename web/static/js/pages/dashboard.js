@@ -2,6 +2,7 @@ import { errNote, apd, h, clear, pageHead, badge, note, fmtBytes, fmtDur, toast,
 import { get, post, put, streamJSON } from '../api.js';
 import * as st from '../state.js';
 import { transparentNote } from '../transparent.js';
+import { parseAwgLog, delayClass } from '../awgstatus.js';
 
 const S = st.S;
 const STATE_RU = { running: 'работает', stopped: 'остановлен', starting: 'запускается', stopping: 'останавливается', error: 'ошибка', failed: 'ошибка', waiting: 'ждёт сеть' };
@@ -79,11 +80,12 @@ export default async function (root) {
     ui.tot = h('div', { class: 'small mute' });
     ui.proxies = h('div', { class: 'card' }, h('h2', 'Выбор узла'), spinner());
     ui.conns = h('div');
+    ui.awg = h('div');
     clear(clashBox).append(
       h('div', { class: 'card' }, h('h2', 'Трафик'),
         h('div', { class: 'row', style: 'gap:28px' }, h('div', h('div', { class: 'small mute' }, '↑ отдача'), ui.up), h('div', h('div', { class: 'small mute' }, '↓ загрузка'), ui.down)),
         svg, ui.tot),
-      ui.proxies, ui.conns);
+      ui.awg, ui.proxies, ui.conns);
   }
   function drawSpark() {
     const max = Math.max(1024, ...hist.up, ...hist.down);
@@ -110,6 +112,27 @@ export default async function (root) {
     } catch (e) { if (alive) clear(ui.proxies).append(h('h2', 'Выбор узла'), note('warn', 'Не удалось получить список прокси: ' + e.message)); }
   }
   const delays = {};
+  // Статус туннелей AmneziaWG: ядро отдаёт его только в журнале, и только на уровне debug.
+  async function loadAwg() {
+    const nodes = ((S.settings && S.settings.nodes) || []).filter((n) => n.type === 'awg' && !n.disabled);
+    if (!ui.awg || !nodes.length) { if (ui.awg) clear(ui.awg); return; }
+    let st = {};
+    try {
+      const r = await get('api/logs?n=1500', { signal: ctl.signal });
+      st = parseAwgLog(((r && r.lines) || []).map((x) => (typeof x === 'string' ? x : x.text || x.line || '')));
+    } catch (e) { return; }
+    if (!alive || !ui.awg) return;
+    const debug = (S.settings.general || {}).log_level === 'debug';
+    clear(ui.awg).append(h('div', { class: 'card' }, h('h2', 'Туннели AmneziaWG'),
+      nodes.map((n) => {
+        const e = st[n.name];
+        const badgeEl = e ? (e.state === 'ok' ? badge('рукопожатие есть', 'ok') : badge('рукопожатие не проходит' + (e.tries ? ' · попыток: ' + e.tries : ''), 'err'))
+          : badge('нет данных', '');
+        const tip = e ? (e.state === 'ok' ? '' : 'Сервер не отвечает на рукопожатие. Проверьте ключи, порт ' + n.server + ':' + n.port + ', параметры обфускации (Jc/Jmin/Jmax, S1–S4, H1–H4, I1–I5, AWG 3.0) и доступность UDP-порта.')
+          : (debug ? 'Событий рукопожатия ещё нет: ядро только запущено или туннель не использовался.' : 'Рукопожатие видно только на уровне логов debug: «Входящие, TUN, сеть → Общие → Уровень логов», затем перезапуск ядра.');
+        return h('div', { class: 'row', style: 'gap:10px;margin:4px 0;flex-wrap:wrap' }, h('b', n.name), h('span', { class: 'small mono mute' }, n.server + ':' + n.port), badgeEl, tip ? h('span', { class: 'small mute' }, tip) : null);
+      })));
+  }
   function drawProxies(all) {
     const groups = Object.entries(all).filter(([n, p]) => n !== 'GLOBAL' && Array.isArray(p.all));
     clear(ui.proxies).append(h('h2', 'Выбор узла'));
@@ -121,13 +144,22 @@ export default async function (root) {
         const d = delays[m] !== undefined ? delays[m] : (all[m] && all[m].history && all[m].history.length ? all[m].history[all[m].history.length - 1].delay : undefined);
         const lab = d === undefined ? '' : d > 0 ? d + ' мс' : 'сбой';
         const c = h('button', {
-          type: 'button', class: 'chip' + (g.now === m ? ' on' : '') + (d > 0 && d < 500 ? ' good' : d === 0 ? ' bad' : ''), disabled: !isSel,
+          type: 'button', class: 'chip' + (g.now === m ? ' on' : '') + (' ' + delayClass(d)), disabled: !isSel,
           'aria-pressed': g.now === m ? 'true' : 'false', title: (delayErr[m] ? 'Ошибка проверки: ' + delayErr[m] + '. ' : '') + (isSel ? 'Выбрать' : 'Группа выбирает узел автоматически'),
           onclick: async () => {
             try { await put('api/clash/proxies/' + encodeURIComponent(name), { name: m }); g.now = m; drawProxies(all); } catch (e) { toastErr(e); }
           },
         }, m, h('small', lab));
-        return c;
+        if (m === 'block') return c;
+        const one = h('button', { type: 'button', class: 'chipgo', 'aria-label': 'Проверить задержку узла ' + m, title: 'Проверить только этот узел', onclick: async () => {
+          one.disabled = true; one.textContent = '…';
+          const cfg = (S.settings.groups || []).find((x) => x.name === name);
+          await testDelay(m, (cfg && cfg.url) || TEST_URL);
+          if (!alive) return;
+          if (delayErr[m]) { await loadDiag(); loadAwg(); }
+          drawProxies(all);
+        } }, '↻');
+        return h('span', { class: 'chipwrap' }, c, one);
       });
       const testAll = h('button', { class: 'btn sm', onclick: async () => {
         testAll.disabled = true; testAll.textContent = 'Проверка…';
@@ -201,7 +233,7 @@ export default async function (root) {
   }
   function syncClash() {
     const run = S.status && S.status.state === 'running';
-    if (run && clashOn !== true) { clashOn = true; buildClash(); loadProxies(); startTraffic(); loadConns(); }
+    if (run && clashOn !== true) { clashOn = true; buildClash(); loadProxies(); loadAwg(); startTraffic(); loadConns(); }
     else if (!run && clashOn !== false) drawOff();
   }
 
@@ -210,6 +242,6 @@ export default async function (root) {
   const unsub = st.subscribe(() => { if (alive) { drawPend(); } });
   let tick = 0;
   paint();
-  timers.push(setInterval(() => { if (!document.hidden) { refresh(); if (clashOn) { loadConns(); startTraffic(); if (++tick % 8 === 0) loadProxies(); } } }, 2500));
+  timers.push(setInterval(() => { if (!document.hidden) { refresh(); if (clashOn) { loadConns(); startTraffic(); if (++tick % 4 === 0) loadAwg(); if (tick % 8 === 0) loadProxies(); } } }, 2500));
   return () => { stop(); unsub(); };
 }

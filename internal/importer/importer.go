@@ -157,9 +157,10 @@ func splitList(s string) []string {
 	return out
 }
 
+// truthy понимает true/1/on/yes (в .conf AmneziaWG флаги пишут как «on» и «off»).
 func truthy(s string) bool {
-	switch strings.ToLower(s) {
-	case "1", "true", "yes", "on":
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "t", "true", "on", "yes", "y", "enable", "enabled":
 		return true
 	}
 	return false
@@ -520,7 +521,7 @@ func ParseWireGuardConf(text string) (model.Node, error) {
 			case "privatekey":
 				n.PrivateKey = v
 			case "address":
-				n.Addresses = append(n.Addresses, splitList(v)...)
+				n.Addresses = append(n.Addresses, withMasks(splitList(v))...)
 			case "mtu":
 				n.MTU, _ = strconv.Atoi(v)
 			case "jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5":
@@ -612,7 +613,7 @@ func extraKey(k string) string {
 
 // setAWGExtra записывает параметры AmneziaWG 3.0; возвращает false, если ключ не из этого набора.
 func setAWGExtra(a *model.AWG, k, v string) bool {
-	on := func() bool { b, _ := strconv.ParseBool(strings.TrimSpace(v)); return b }
+	on := func() bool { return truthy(v) }
 	switch extraKey(k) {
 	case "headerprotectionkey":
 		a.HeaderProtectionKey = v
@@ -666,10 +667,31 @@ func jBool(v any) bool {
 	case bool:
 		return x
 	case string:
-		b, _ := strconv.ParseBool(strings.TrimSpace(x))
-		return b
+		return truthy(x)
 	}
 	return false
+}
+
+// withMask дописывает /32 или /128 к адресу без маски.
+func withMask(a string) string {
+	a = strings.TrimSpace(a)
+	if a == "" || strings.Contains(a, "/") {
+		return a
+	}
+	if strings.Contains(a, ":") {
+		return a + "/128"
+	}
+	return a + "/32"
+}
+
+func withMasks(list []string) []string {
+	out := make([]string, 0, len(list))
+	for _, a := range list {
+		if a = withMask(a); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func jList(v any) []string {
@@ -722,7 +744,7 @@ func ParseAWGJSON(text string) ([]model.Node, error) {
 		if tag == "" {
 			tag = jStr(m["tag"])
 		}
-		n := model.Node{Type: "awg", UDP: true, Name: tag, PrivateKey: jStr(m["private_key"]), Addresses: jList(m["address"]), MTU: jInt(m["mtu"]),
+		n := model.Node{Type: "awg", UDP: true, Name: tag, PrivateKey: jStr(m["private_key"]), Addresses: withMasks(jList(m["address"])), MTU: jInt(m["mtu"]),
 			System: jBool(m["useIntegratedTun"])}
 		a := model.AWG{Jc: jInt(m["jc"]), Jmin: jInt(m["jmin"]), Jmax: jInt(m["jmax"]), S1: jInt(m["s1"]), S2: jInt(m["s2"]), S3: jInt(m["s3"]), S4: jInt(m["s4"]),
 			H1: jStr(m["h1"]), H2: jStr(m["h2"]), H3: jStr(m["h3"]), H4: jStr(m["h4"]),

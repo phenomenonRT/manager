@@ -102,7 +102,8 @@ td.act{white-space:nowrap;text-align:right}
 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:99px;padding:2px 10px;background:var(--surface);cursor:pointer;font:inherit;color:inherit}
 .chip.on{border-color:var(--accent);background:var(--accent-soft)}
 .chip small{color:var(--mute);font-family:var(--mono)}
-.chip.good small{color:var(--ok)}.chip.bad small{color:var(--err)}
+.chip.good small{color:var(--ok)}.chip.bad small{color:var(--err)}.chip.warn small{color:var(--warn)}.chip.slow small{color:var(--warn)}
+.chipwrap{display:inline-flex;align-items:center;gap:2px}.chipgo{border:0;background:none;color:var(--mute);cursor:pointer;font:inherit;padding:2px 5px;border-radius:99px}.chipgo:hover{color:var(--accent);background:var(--accent-soft)}
 .members{list-style:none;margin:6px 0;padding:0}
 .members li{display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px dashed var(--line)}
 /* code / logs */
