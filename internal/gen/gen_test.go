@@ -320,6 +320,18 @@ func TestAmneziaRuleSetHTTPClient(t *testing.T) {
 	if !strings.Contains(c, `"http_clients"`) || !strings.Contains(c, `"http_client": "rules-dl"`) || strings.Contains(c, "download_detour") {
 		t.Errorf("ожидался явный http_client:\n%s", c)
 	}
+	// прямая загрузка: detour не задаётся (ядро 1.14 отвергает detour на пустой direct)
+	i := strings.Index(c, `"http_clients"`)
+	if seg := c[i : i+120]; strings.Contains(seg, `"detour"`) {
+		t.Errorf("для direct detour быть не должно: %s", seg)
+	}
+	s.General.UpdateVia = "proxy"
+	res, _ = Singbox(s)
+	c = string(res.Config)
+	i = strings.Index(c, `"http_clients"`)
+	if !strings.Contains(c[i:i+120], `"detour": "proxy"`) {
+		t.Errorf("через proxy detour обязателен: %s", c[i:i+120])
+	}
 }
 
 func TestLogNone(t *testing.T) {

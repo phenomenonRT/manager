@@ -39,11 +39,13 @@ func Singbox(s *model.Settings) (*Result, error) {
 	}
 	if len(p.sets) > 0 && s.Core == model.CoreAmnezia {
 		// sing-box 1.14+: списки скачиваются через явный HTTP-клиент (неявный клиент по умолчанию устарел)
-		via := "direct"
-		if v := s.General.UpdateVia; v != "" && v != "block" {
-			via = v
+		// «direct» как detour ядро отвергает («detour to an empty direct outbound makes no sense»):
+		// для прямой загрузки detour просто не задаётся.
+		cl := NewO().Set("tag", "rules-dl")
+		if v := s.General.UpdateVia; v != "" && v != "direct" && v != "block" {
+			cl.Set("detour", v)
 		}
-		root.Set("http_clients", []any{NewO().Set("tag", "rules-dl").Set("detour", via)})
+		root.Set("http_clients", []any{cl})
 	}
 	root.Set("route", sbRoute(s, p))
 
