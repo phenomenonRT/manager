@@ -100,3 +100,18 @@ func checkNft(t *testing.T, up string) {
 		t.Fatalf("nft -c: %v\n%s\n--- скрипт ---\n%s", err, out, body)
 	}
 }
+
+func TestNftTProxyWithoutSocketModule(t *testing.T) {
+	sp := baseSpec("tproxy", "nft")
+	sp.NoSocketMatch = true
+	sc, err := Generate(sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sc.Up, "socket transparent") {
+		t.Errorf("без nft_socket правило socket transparent выводиться не должно:\n%s", sc.Up)
+	}
+	if !strings.Contains(sc.Up, "tproxy to :7893") {
+		t.Errorf("правило tproxy должно остаться:\n%s", sc.Up)
+	}
+}

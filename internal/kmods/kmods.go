@@ -15,7 +15,7 @@ import (
 )
 
 // Packages — пакеты ядерных модулей.
-var Packages = []string{"kmod-tun", "kmod-nft-tproxy", "kmod-nft-queue"}
+var Packages = []string{"kmod-tun", "kmod-nft-tproxy", "kmod-nft-queue", "kmod-nft-socket"}
 
 // Job — состояние установки.
 type Job struct {
@@ -229,7 +229,7 @@ func (m *Manager) run(mgr string) {
 		err = m.exec(ctx, "opkg", append([]string{"install"}, Packages...)...)
 	}
 	if err == nil {
-		for _, mod := range []string{"tun", "nft_tproxy", "nfnetlink_queue", "nft_queue"} {
+		for _, mod := range []string{"tun", "nft_tproxy", "nft_socket", "nfnetlink_queue", "nft_queue"} {
 			if p, e := exec.LookPath("modprobe"); e == nil {
 				_ = m.exec(ctx, p, mod)
 			}

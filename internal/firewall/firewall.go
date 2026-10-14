@@ -27,6 +27,10 @@ type Spec struct {
 	BypassDst  []string
 	FwMark     int
 	RouteTable int
+	// NoSocketMatch — не выводить правило «socket transparent» (nftables): на роутере нет модуля
+	// nft_socket (kmod-nft-socket). Правило лишь ускоряет уже установленные TCP-соединения;
+	// ядро tproxy само находит их сокеты, так что без него всё работает.
+	NoSocketMatch bool
 }
 
 var ifaceRe = regexp.MustCompile(`^[A-Za-z0-9_.+-]{1,15}$`)
@@ -54,6 +58,9 @@ func FromSettings(s *model.Settings, backend string) (*Spec, error) {
 		RedirPort: s.Inbounds.RedirPort, TProxyPort: s.Inbounds.TProxyPort,
 		LANIfaces: s.Firewall.LANIfaces, Include: s.Firewall.Include, Exclude: s.Firewall.Exclude,
 		BypassDst: s.Firewall.BypassDst, FwMark: s.Firewall.FwMark, RouteTable: s.Firewall.RouteTable,
+	}
+	if be == "nft" && sp.Mode == "tproxy" {
+		sp.NoSocketMatch = !nftSocketSupported()
 	}
 	if s.Firewall.DNSRedirect && s.DNS.Enabled {
 		h, p := hostPort(s.DNS.Listen)
@@ -184,7 +191,9 @@ func genNft(sp *Spec) *Scripts {
 		b.WriteString("\tchain proxy_mangle {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n")
 		common(&b)
 		b.WriteString("\t\tip daddr @bypass return\n")
-		fmt.Fprintf(&b, "\t\tmeta l4proto tcp socket transparent 1 meta mark set %d accept\n", sp.FwMark)
+		if !sp.NoSocketMatch {
+			fmt.Fprintf(&b, "\t\tmeta l4proto tcp socket transparent 1 meta mark set %d accept\n", sp.FwMark)
+		}
 		fmt.Fprintf(&b, "\t\tmeta l4proto { tcp, udp } tproxy to :%d meta mark set %d accept\n\t}\n", sp.TProxyPort, sp.FwMark)
 	}
 	b.WriteString("}\n")
@@ -332,4 +341,14 @@ func Remove(ctx context.Context, sc *Scripts) {
 	if sc != nil {
 		_, _ = run(ctx, sc.Down)
 	}
+}
+
+// nftSocketSupported проверяет, понимает ли ядро выражение «socket» в nftables (модуль nft_socket).
+// Проба идёт в режиме проверки (-c): правила не применяются, но ядро подгружает модуль или отказывает.
+func nftSocketSupported() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "nft", "-c", "-f", "-")
+	cmd.Stdin = strings.NewReader("table ip corepanel_probe {\n\tchain c {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n\t\tmeta l4proto tcp socket transparent 1 accept\n\t}\n}\n")
+	return cmd.Run() == nil
 }

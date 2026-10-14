@@ -140,7 +140,7 @@ export default async function (root) {
     if (!k.installable) return;
     const j = k.job || {};
     const have = k.present || [];
-    const why = { 'kmod-tun': 'устройство TUN', 'kmod-nft-tproxy': 'режим tproxy', 'kmod-nft-queue': 'auto_redirect в TUN' };
+    const why = { 'kmod-tun': 'устройство TUN', 'kmod-nft-tproxy': 'режим tproxy', 'kmod-nft-queue': 'auto_redirect в TUN', 'kmod-nft-socket': 'ускорение tproxy (необязательно)' };
     depBox.append(h('div', { class: 'mod' },
       h('div', { class: 'mod-head' }, h('b', { class: 'mod-name' }, 'Зависимые компоненты'), h('span', { class: 'mod-tag' }, 'Модули ядра для TUN и tproxy'), h('span', { class: 'grow' }),
         have.length ? badge('установлено: ' + have.length, 'ok') : badge('нет', 'warn')),
