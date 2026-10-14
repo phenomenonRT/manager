@@ -432,3 +432,20 @@ func TestDNSDisabledKeepsCoreResolver(t *testing.T) {
 		t.Errorf("при выключенном DNS перехват DNS (hijack-dns) должен быть выключен: иначе клиенты получают REFUSED")
 	}
 }
+
+func TestTunStrictRoute(t *testing.T) {
+	s := sample()
+	s.Tun.AutoRoute, s.Tun.StrictRoute = true, true
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Config, `"strict_route": true`) {
+		t.Errorf("strict_route не попал в TUN: %s", res.Config)
+	}
+	s.Tun.StrictRoute = false
+	res, _ = Singbox(s)
+	if strings.Contains(res.Config, "strict_route") {
+		t.Errorf("выключенный strict_route не должен выводиться")
+	}
+}
