@@ -17,6 +17,7 @@ export function normalize(s) {
   if (s.core !== 'amnezia') s.core = 'amnezia';
   if (!s.final) s.final = 'direct';
   for (const g of s.groups) arr(g, 'members');
+  for (const f of s.ifaces) arr(f, 'sources');
   return s;
 }
 // Заполняет пропущенные поля значениями по умолчанию (для импорта файла).

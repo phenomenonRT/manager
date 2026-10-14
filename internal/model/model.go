@@ -73,7 +73,10 @@ type Iface struct {
 	Address  string `json:"address"`
 	MTU      int    `json:"mtu,omitempty"`
 	Outbound string `json:"outbound"`
-	Disabled bool   `json:"disabled,omitempty"`
+	// Sources — устройства или подсети LAN (IPv4), которых панель сама направит в этот интерфейс
+	// (ip rule + отдельная таблица маршрутов). Пусто — маршрутизацию в интерфейс настраиваете вы.
+	Sources  []string `json:"sources,omitempty"`
+	Disabled bool     `json:"disabled,omitempty"`
 }
 
 type Tun struct {
@@ -514,6 +517,12 @@ func (s *Settings) Validate() []Issue {
 		seenIf[f.Name] = true
 		if _, _, err := net.ParseCIDR(strings.TrimSpace(f.Address)); err != nil {
 			add("error", "интерфейс «%s»: адрес должен быть в виде 172.20.0.1/30", f.Name)
+		}
+		for _, src := range f.Sources {
+			src = strings.TrimSpace(src)
+			if _, _, err := net.ParseCIDR(src); err != nil && net.ParseIP(src) == nil {
+				add("error", "интерфейс «%s»: «%s» — не IP-адрес и не подсеть", f.Name, src)
+			}
 		}
 		if !exists(f.Outbound) || f.Outbound == "" {
 			add("error", "интерфейс «%s»: выход «%s» не существует — выберите узел или группу", f.Name, f.Outbound)

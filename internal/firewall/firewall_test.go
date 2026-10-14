@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"corepanel/internal/model"
 )
 
 func baseSpec(mode, be string) *Spec {
@@ -113,5 +115,29 @@ func TestNftTProxyWithoutSocketModule(t *testing.T) {
 	}
 	if !strings.Contains(sc.Up, "tproxy to :7893") {
 		t.Errorf("правило tproxy должно остаться:\n%s", sc.Up)
+	}
+}
+
+func TestIfaceRoutes(t *testing.T) {
+	s := model.Default()
+	s.Ifaces = []model.Iface{{Name: "vpn1", Address: "172.20.1.1/30", Outbound: "x", Sources: []string{"192.168.1.50", "192.168.1.64/28", "evil; rm -rf /", "fe80::1"}}, {Name: "vpn2", Outbound: "x"}}
+	sc := IfaceRoutes(s)
+	if sc == nil {
+		t.Fatal("nil")
+	}
+	for _, w := range []string{"ip route replace default dev vpn1 table 210", "ip rule add from 192.168.1.50/32 lookup 210", "ip rule add from 192.168.1.64/28 lookup 210"} {
+		if !strings.Contains(sc.Up, w) {
+			t.Fatalf("нет %q:\n%s", w, sc.Up)
+		}
+	}
+	if strings.Contains(sc.Up, "evil") || strings.Contains(sc.Up, "fe80") || strings.Contains(sc.Up, "vpn2") {
+		t.Fatalf("лишнее:\n%s", sc.Up)
+	}
+	if !strings.Contains(sc.Down, "ip rule del from 192.168.1.50/32 lookup 210") {
+		t.Fatal(sc.Down)
+	}
+	s.Ifaces = nil
+	if IfaceRoutes(s) != nil {
+		t.Fatal("без интерфейсов скрипт не нужен")
 	}
 }

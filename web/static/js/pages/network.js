@@ -47,21 +47,22 @@ export default async function (root) {
       fgrid(field('Имя интерфейса', txt(f, 'name', { ph: 'vpn1' })), field('Адрес (CIDR)', txt(f, 'address', { ph: '172.20.1.1/30' })),
         field('Выход', sel(f, 'outbound', [['', '— выберите —'], ...outs]), 'Узел или группа, куда уйдёт весь трафик, попавший в этот интерфейс.'),
         field('MTU', num(f, 'mtu', { min: 576 }), 'Пусто — по умолчанию.')),
+      field('Устройства в этом интерфейсе', lines(f, 'sources', { ph: '192.168.1.50\n192.168.1.64/28' }), 'IP-адреса или подсети LAN (по одному в строке), чей трафик панель сама направит в интерфейс при запуске ядра и уберёт при остановке. Пусто — вы направляете трафик сами.'),
       h('div', { class: 'row' }, chk(f, 'disabled', 'Отключён'),
         h('button', { class: 'btn sm danger', onclick: async () => {
           if (!(await confirmBox('Удалить интерфейс «' + f.name + '»?'))) return;
           s.ifaces.splice(s.ifaces.indexOf(f), 1); st.touch(); drawIfaces();
         } }, 'Удалить')),
-      f.name && f.address ? h('p', { class: 'small mute' }, 'Направить в него устройство, например: ', h('code', 'ip route add default dev ' + f.name + ' table 100 && ip rule add from 192.168.1.50 lookup 100')) : null))
+      null))
       : [h('p', { class: 'small mute' }, 'Интерфейсов пока нет.')]),
       );
   }
   const ifCard = h('div', { class: 'card' }, h('h2', 'Свои интерфейсы'),
-    h('p', { class: 'small mute' }, 'Создайте отдельный виртуальный интерфейс (TUN) и укажите, куда идёт его трафик: в конкретный VPN-узел или в группу. Дальше любую программу, устройство или подсеть можно направить в него обычной политикой маршрутизации роутера. Маршруты ядро само не меняет, основной TUN и перехват трафика от этого не затрагиваются.'),
+    h('p', { class: 'small mute' }, 'Создайте отдельный виртуальный интерфейс (TUN) и укажите, куда идёт его трафик: в конкретный VPN-узел или в группу. Впишите устройства или подсети LAN — панель сама направит их в интерфейс. Основной TUN и перехват трафика от этого не затрагиваются.'),
     ifList,
     h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => {
       const n = freeIface();
-      s.ifaces.push({ name: 'vpn' + n, address: '172.20.' + n + '.1/30', outbound: (s.groups[0] || s.nodes[0] || {}).name || '' });
+      s.ifaces.push({ name: 'vpn' + n, address: '172.20.' + n + '.1/30', outbound: (s.groups[0] || s.nodes[0] || {}).name || '', sources: [] });
       st.touch(); drawIfaces();
     } }, '+ Добавить интерфейс')));
   drawIfaces();

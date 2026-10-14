@@ -352,3 +352,41 @@ func nftSocketSupported() bool {
 	cmd.Stdin = strings.NewReader("table ip corepanel_probe {\n\tchain c {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n\t\tmeta l4proto tcp socket transparent 1 accept\n\t}\n}\n")
 	return cmd.Run() == nil
 }
+
+// IfaceRoutes строит скрипты, которые направляют устройства LAN в свои TUN-интерфейсы:
+// отдельная таблица маршрутов на интерфейс и правила «from источник». Возвращает nil, если направлять нечего.
+func IfaceRoutes(s *model.Settings) *Scripts {
+	var up, down strings.Builder
+	n := 0
+	for i, f := range s.Ifaces {
+		if f.Disabled || f.Name == "" {
+			continue
+		}
+		var srcs []string
+		for _, src := range f.Sources {
+			src = strings.TrimSpace(src)
+			if ip := net.ParseIP(src); ip != nil && ip.To4() != nil {
+				srcs = append(srcs, src+"/32")
+			} else if _, nw, err := net.ParseCIDR(src); err == nil && nw.IP.To4() != nil {
+				srcs = append(srcs, nw.String())
+			}
+		}
+		if len(srcs) == 0 {
+			continue
+		}
+		n++
+		table := 210 + i
+		fmt.Fprintf(&up, "for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do ip link show %s >/dev/null 2>&1 && break; sleep 0.5; done\n", f.Name)
+		fmt.Fprintf(&up, "ip route replace default dev %s table %d\n", f.Name, table)
+		for _, src := range srcs {
+			fmt.Fprintf(&up, "ip rule del from %s lookup %d 2>/dev/null\n", src, table)
+			fmt.Fprintf(&up, "ip rule add from %s lookup %d pref %d\n", src, table, 10000+i)
+			fmt.Fprintf(&down, "ip rule del from %s lookup %d\n", src, table)
+		}
+		fmt.Fprintf(&down, "ip route flush table %d\n", table)
+	}
+	if n == 0 {
+		return nil
+	}
+	return &Scripts{Up: up.String(), Down: tolerant(down.String())}
+}
