@@ -289,8 +289,24 @@ func sbInbounds(s *model.Settings) []any {
 		}
 		in = append(in, t)
 	}
+	for _, f := range s.Ifaces {
+		if f.Disabled || f.Name == "" || f.Address == "" {
+			continue
+		}
+		t := NewO().Set("type", "tun").Set("tag", ifaceTag(f.Name)).
+			Set("interface_name", f.Name).
+			Set("address", []string{strings.TrimSpace(f.Address)}).
+			Opt("mtu", f.MTU).
+			Set("auto_route", false)
+		if s.Core != model.CoreAmnezia {
+			t.Set("stack", s.Tun.Stack)
+		}
+		in = append(in, t)
+	}
 	return in
 }
+
+func ifaceTag(name string) string { return "if-" + name }
 
 // ---------- исходящие ----------
 
@@ -571,6 +587,29 @@ func sbRoute(s *model.Settings, p *plan) *O {
 	}
 	if s.DNS.Enabled { // при выключенном DNS ядро чужие DNS-запросы не перехватывает
 		rules = append(rules, NewO().Set("protocol", "dns").Set("action", "hijack-dns"))
+	}
+	known := map[string]bool{"direct": true, "block": true}
+	for _, n := range activeNodes(s) {
+		known[n.Name] = true
+	}
+	for _, g := range s.Groups {
+		known[g.Name] = true
+	}
+	for _, f := range s.Ifaces { // свой интерфейс: весь его трафик — в выбранный выход, раньше остальных правил
+		if f.Disabled || f.Name == "" || f.Address == "" {
+			continue
+		}
+		if !known[f.Outbound] {
+			p.warn("интерфейс «%s»: выход «%s» отключён или не существует — интерфейс создан, но трафик пойдёт по общим правилам", f.Name, f.Outbound)
+			continue
+		}
+		m := NewO().Set("inbound", []string{ifaceTag(f.Name)})
+		if f.Outbound == "block" {
+			m.Set("action", "reject")
+		} else {
+			m.Set("action", "route").Set("outbound", f.Outbound)
+		}
+		rules = append(rules, m)
 	}
 	if s.General.BypassLAN {
 		rules = append(rules, NewO().Set("ip_is_private", true).Set("action", "route").Set("outbound", "direct"))

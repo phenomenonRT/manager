@@ -11,7 +11,7 @@ export const isDirty = () => !!S.settings && JSON.stringify(S.settings) !== S.sa
 export function normalize(s) {
   const arr = (o, k) => { if (!Array.isArray(o[k])) o[k] = []; };
   for (const k of ['general', 'inbounds', 'tun', 'dns', 'firewall', 'download', 'update']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
-  for (const k of ['nodes', 'groups', 'rule_sets', 'rules']) arr(s, k);
+  for (const k of ['nodes', 'groups', 'rule_sets', 'rules', 'ifaces']) arr(s, k);
   arr(s.dns, 'rules'); arr(s.tun, 'exclude_cidr');
   for (const k of ['lan_ifaces', 'include', 'exclude', 'bypass_dst']) arr(s.firewall, k);
   if (s.core !== 'amnezia') s.core = 'amnezia';
@@ -98,6 +98,8 @@ export function renameRef(oldN, newN) {
   if (s.final === oldN) s.final = newN;
   if (s.general.update_via === oldN) s.general.update_via = newN;
   if (s.dns.remote_detour === oldN) s.dns.remote_detour = newN;
+  if (s.dns.local_detour === oldN) s.dns.local_detour = newN;
+  for (const f of s.ifaces || []) if (f.outbound === oldN) f.outbound = newN;
 }
 // Перехват DNS брандмауэром не работает при слушателе на 127.0.0.1: переносим его на адрес роутера в LAN.
 export async function fixDnsListen() {

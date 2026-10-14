@@ -28,6 +28,7 @@ type Settings struct {
 	General  General   `json:"general"`
 	Inbounds Inbounds  `json:"inbounds"`
 	Tun      Tun       `json:"tun"`
+	Ifaces   []Iface   `json:"ifaces"` // свои TUN-интерфейсы: весь трафик в них идёт в выбранный выход
 	DNS      DNS       `json:"dns"`
 	Nodes    []Node    `json:"nodes"`
 	Groups   []Group   `json:"groups"`
@@ -63,6 +64,16 @@ type Inbounds struct {
 	MixedPort  int `json:"mixed_port"`
 	RedirPort  int `json:"redir_port"`
 	TProxyPort int `json:"tproxy_port"`
+}
+
+// Iface — дополнительный TUN-интерфейс. Всё, что роутер направит в него (ip route, ip rule, настройки
+// политик маршрутизации), уходит в выбранный узел или группу; ядро само маршруты не меняет.
+type Iface struct {
+	Name     string `json:"name"`
+	Address  string `json:"address"`
+	MTU      int    `json:"mtu,omitempty"`
+	Outbound string `json:"outbound"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 type Tun struct {
@@ -487,6 +498,25 @@ func (s *Settings) Validate() []Issue {
 	for _, n := range s.Nodes {
 		if n.Detour != "" && !exists(n.Detour) {
 			add("error", "узел «%s»: цепочка через несуществующий «%s»", n.Name, n.Detour)
+		}
+	}
+	seenIf := map[string]bool{}
+	for _, f := range s.Ifaces {
+		if f.Disabled {
+			continue
+		}
+		switch {
+		case f.Name == "" || len(f.Name) > 15 || strings.ContainsAny(f.Name, " /,\"'"):
+			add("error", "интерфейс «%s»: имя — до 15 символов без пробелов и слэшей", f.Name)
+		case seenIf[f.Name] || (s.Tun.Enabled && f.Name == s.Tun.Name):
+			add("error", "интерфейс «%s»: такое имя уже занято", f.Name)
+		}
+		seenIf[f.Name] = true
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(f.Address)); err != nil {
+			add("error", "интерфейс «%s»: адрес должен быть в виде 172.20.0.1/30", f.Name)
+		}
+		if !exists(f.Outbound) || f.Outbound == "" {
+			add("error", "интерфейс «%s»: выход «%s» не существует — выберите узел или группу", f.Name, f.Outbound)
 		}
 	}
 	if !exists(s.Final) {

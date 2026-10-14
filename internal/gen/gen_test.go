@@ -505,3 +505,66 @@ func TestLocalDNSDetour(t *testing.T) {
 		t.Fatalf("mihomo: %v", err)
 	}
 }
+
+func TestCustomIfaceRoutesToOutbound(t *testing.T) {
+	s := sample()
+	s.Core = model.CoreAmnezia
+	s.Ifaces = []model.Iface{{Name: "vpn1", Address: "172.20.1.1/30", Outbound: s.Nodes[0].Name}, {Name: "vpn2", Address: "172.20.2.1/30", Outbound: "нет-такого"}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(res.Config), &m); err != nil {
+		t.Fatal(err)
+	}
+	tuns := 0
+	for _, x := range m["inbounds"].([]any) {
+		in := x.(map[string]any)
+		if in["type"] == "tun" && in["tag"] == "if-vpn1" {
+			tuns++
+			if in["interface_name"] != "vpn1" || in["auto_route"] != false {
+				t.Fatalf("%v", in)
+			}
+		}
+		if in["tag"] == "if-vpn2" {
+			tuns++
+		}
+	}
+	if tuns != 2 {
+		t.Fatalf("интерфейс создаётся и при неверном выходе: %d", tuns)
+	}
+	rules := m["route"].(map[string]any)["rules"].([]any)
+	found := false
+	for _, x := range rules {
+		r := x.(map[string]any)
+		if ib, ok := r["inbound"].([]any); ok && len(ib) == 1 && ib[0] == "if-vpn2" {
+			t.Fatal("правило для интерфейса с неверным выходом не создаётся")
+		}
+		if ib, ok := r["inbound"].([]any); ok && len(ib) == 1 && ib[0] == "if-vpn1" {
+			found = r["outbound"] == s.Nodes[0].Name && r["action"] == "route"
+		}
+	}
+	if !found {
+		t.Fatalf("нет правила для if-vpn1: %s", res.Config)
+	}
+	warned := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "vpn2") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatal("нет предупреждения про неверный выход")
+	}
+	s.Ifaces[1].Address = "bad"
+	hasErr := false
+	for _, is := range s.Validate() {
+		if is.Level == "error" && strings.Contains(is.Message, "vpn2") {
+			hasErr = true
+		}
+	}
+	if !hasErr {
+		t.Fatal("Validate должен ругаться на интерфейс vpn2")
+	}
+}

@@ -212,7 +212,13 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 		}
 		s.Logs.Add("[panel] запускаю, не дожидаясь: " + why)
 	}
-	if set.Tun.Enabled {
+	needTun := set.Tun.Enabled
+	for _, f := range set.Ifaces {
+		if !f.Disabled {
+			needTun = true
+		}
+	}
+	if needTun {
 		if err := ensureTun(); err != nil {
 			s.lastErr = err.Error()
 			s.Logs.Add("[panel] " + s.lastErr)

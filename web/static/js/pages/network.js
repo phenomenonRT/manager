@@ -1,4 +1,4 @@
-import { apd, h, clear, pageHead, note, field, fgrid, txt, num, pw, lines, sel, chk, badge, modal, copy, toastErr } from '../ui.js';
+import { apd, h, clear, pageHead, note, field, fgrid, txt, num, pw, lines, sel, chk, badge, modal, copy, toastErr, confirmBox } from '../ui.js';
 import { get, post } from '../api.js';
 import * as st from '../state.js';
 
@@ -34,6 +34,38 @@ export default async function (root) {
     } catch (e) { toastErr(e); }
   }
 
+  // ---- свои интерфейсы: весь трафик в них идёт в выбранный узел или группу ----
+  const ifList = h('div');
+  function freeIface() {
+    const used = new Set([tun.name, ...s.ifaces.map((f) => f.name), ...ifs.map((i) => i.name)]);
+    for (let i = 1; i < 100; i++) if (!used.has('vpn' + i)) return i;
+    return 1;
+  }
+  function drawIfaces() {
+    const outs = st.outbounds();
+    clear(ifList).append(...(s.ifaces.length ? s.ifaces.map((f) => h('div', { class: 'card', style: 'background:var(--bg)' },
+      fgrid(field('Имя интерфейса', txt(f, 'name', { ph: 'vpn1' })), field('Адрес (CIDR)', txt(f, 'address', { ph: '172.20.1.1/30' })),
+        field('Выход', sel(f, 'outbound', [['', '— выберите —'], ...outs]), 'Узел или группа, куда уйдёт весь трафик, попавший в этот интерфейс.'),
+        field('MTU', num(f, 'mtu', { min: 576 }), 'Пусто — по умолчанию.')),
+      h('div', { class: 'row' }, chk(f, 'disabled', 'Отключён'),
+        h('button', { class: 'btn sm danger', onclick: async () => {
+          if (!(await confirmBox('Удалить интерфейс «' + f.name + '»?'))) return;
+          s.ifaces.splice(s.ifaces.indexOf(f), 1); st.touch(); drawIfaces();
+        } }, 'Удалить')),
+      f.name && f.address ? h('p', { class: 'small mute' }, 'Направить в него устройство, например: ', h('code', 'ip route add default dev ' + f.name + ' table 100 && ip rule add from 192.168.1.50 lookup 100')) : null))
+      : [h('p', { class: 'small mute' }, 'Интерфейсов пока нет.')]),
+      );
+  }
+  const ifCard = h('div', { class: 'card' }, h('h2', 'Свои интерфейсы'),
+    h('p', { class: 'small mute' }, 'Создайте отдельный виртуальный интерфейс (TUN) и укажите, куда идёт его трафик: в конкретный VPN-узел или в группу. Дальше любую программу, устройство или подсеть можно направить в него обычной политикой маршрутизации роутера. Маршруты ядро само не меняет, основной TUN и перехват трафика от этого не затрагиваются.'),
+    ifList,
+    h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn primary', onclick: () => {
+      const n = freeIface();
+      s.ifaces.push({ name: 'vpn' + n, address: '172.20.' + n + '.1/30', outbound: (s.groups[0] || s.nodes[0] || {}).name || '' });
+      st.touch(); drawIfaces();
+    } }, '+ Добавить интерфейс')));
+  drawIfaces();
+
   const kmBox = h('div');
   apd(root, pageHead('Входящие, TUN и сеть', 'Как трафик попадает в ядро и общие параметры'), dl, kmBox,
     (plat.notes && plat.notes.length) ? h('div', plat.notes.map((n) => note('warn', h('b', (plat.os_name || 'Платформа') + ': '), n))) : null,
@@ -67,6 +99,7 @@ export default async function (root) {
         chk(tun, 'auto_redirect', 'auto_redirect (sing-box)', 'Использует nftables для перенаправления TCP — быстрее и экономнее по CPU. Нужны nftables и модуль kmod-nft-queue; если ядро падает с ошибкой nfqueue — отключите.'),
         chk(tun, 'dns_hijack', 'Перехват DNS', 'Все DNS-запросы, попавшие в TUN, обрабатываются DNS ядра.')),
       field('Исключить подсети', lines(tun, 'exclude_cidr', { ph: '192.168.0.0/16' }), 'Подсети, которые не нужно направлять в TUN (по одной в строке).')),
+    ifCard,
     h('div', { class: 'card' }, h('h2', 'Прозрачный прокси (брандмауэр)'),
       fgrid(field('Режим', sel(fw, 'mode', [['off', 'off — выключен'], ['redirect', 'redirect — TCP'], ['tproxy', 'tproxy — TCP+UDP']]), 'Чем перехватывать трафик LAN. При использовании TUN обычно оставляют off.'),
         field('Бэкенд', sel(fw, 'backend', [['auto', 'auto'], ['nft', 'nftables'], ['iptables', 'iptables']]), 'auto — по возможностям системы (' + (plat.firewall_backend || 'не определено') + ').'),
