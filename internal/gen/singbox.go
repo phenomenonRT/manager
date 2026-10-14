@@ -28,6 +28,8 @@ func Singbox(s *model.Settings) (*Result, error) {
 			return nil, err
 		}
 		root.Set("dns", dns)
+	} else {
+		root.Set("dns", sbDNSBasic(s, p))
 	}
 
 	root.Set("inbounds", sbInbounds(s))
@@ -101,6 +103,25 @@ func sbDNSServer(tag string, a dnsAddr, detour string) *O {
 		o.Set("detour", detour)
 	}
 	return o
+}
+
+// sbDNSBasic — минимальный DNS при выключенном DNS панели. Ядру всё равно нужно самому
+// разрешать имена (проверка задержки по адресу с доменом, загрузка наборов правил, узлы с доменом),
+// иначе системный резолвер роутера отвечает REFUSED. Запросы идут по IP-адресу bootstrap напрямую.
+func sbDNSBasic(s *model.Settings, p *plan) *O {
+	addr := s.DNS.Bootstrap
+	if addr == "" {
+		addr = s.DNS.Local
+	}
+	boot, err := parseDNSAddr(addr)
+	if err != nil || boot.Type == "local" || !isIP(boot.Host) {
+		boot = dnsAddr{Type: "udp", Host: "77.88.8.8"}
+	}
+	dns := NewO().Set("servers", []any{sbDNSServer("bootstrap", boot, "")}).Set("final", "bootstrap")
+	if !s.General.IPv6 {
+		dns.Set("strategy", "ipv4_only")
+	}
+	return dns
 }
 
 func sbDNS(s *model.Settings, p *plan) (*O, error) {
@@ -535,7 +556,9 @@ func sbRoute(s *model.Settings, p *plan) *O {
 	if s.General.Sniff {
 		rules = append(rules, NewO().Set("action", "sniff"))
 	}
-	rules = append(rules, NewO().Set("protocol", "dns").Set("action", "hijack-dns"))
+	if s.DNS.Enabled { // при выключенном DNS ядро чужие DNS-запросы не перехватывает
+		rules = append(rules, NewO().Set("protocol", "dns").Set("action", "hijack-dns"))
+	}
 	if s.General.BypassLAN {
 		rules = append(rules, NewO().Set("ip_is_private", true).Set("action", "route").Set("outbound", "direct"))
 	}
@@ -589,8 +612,6 @@ func sbRoute(s *model.Settings, p *plan) *O {
 	} else if s.Tun.Enabled {
 		r.Set("auto_detect_interface", true)
 	}
-	if s.DNS.Enabled {
-		r.Set("default_domain_resolver", "bootstrap")
-	}
+	r.Set("default_domain_resolver", "bootstrap")
 	return r
 }

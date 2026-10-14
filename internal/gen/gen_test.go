@@ -407,3 +407,28 @@ func TestAWG3Fields(t *testing.T) {
 		t.Errorf("по умолчанию keepalive должен быть числом 25: %s", b)
 	}
 }
+
+func TestDNSDisabledKeepsCoreResolver(t *testing.T) {
+	s := model.Default()
+	s.DNS.Enabled = false
+	s.Nodes = []model.Node{{Name: "a", Type: "shadowsocks", Server: "1.1.1.1", Port: 1, Method: "aes-128-gcm", Password: "x"}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal([]byte(res.Config), &root); err != nil {
+		t.Fatal(err)
+	}
+	dns, _ := root["dns"].(map[string]any)
+	if dns == nil || dns["final"] != "bootstrap" {
+		t.Fatalf("при выключенном DNS ядру нужен свой резолвер (bootstrap по IP): %v", root["dns"])
+	}
+	route := root["route"].(map[string]any)
+	if route["default_domain_resolver"] != "bootstrap" {
+		t.Errorf("нет default_domain_resolver при выключенном DNS")
+	}
+	if strings.Contains(res.Config, `"hijack-dns"`) {
+		t.Errorf("при выключенном DNS перехват DNS (hijack-dns) должен быть выключен: иначе клиенты получают REFUSED")
+	}
+}

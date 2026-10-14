@@ -9,7 +9,7 @@ export default async function (root) {
   const ed = ruleEditor({ rules: d.rules, dns: true, outs: [['remote', 'remote — основной (через прокси)'], ['local', 'local — локальный/провайдера'], ['block', 'block — не отвечать']], defaultOut: 'local' });
   const body = h('div');
   function draw() {
-    if (!d.enabled) { clear(body).append(note('', 'DNS ядра выключен: используется системный DNS.')); return; }
+    if (!d.enabled) { clear(body).append(note('', 'DNS ядра выключен: клиентские DNS-запросы ядро не перехватывает и идут по обычным правилам. Сами имена (проверка задержки, наборы правил) ядро разрешает напрямую через адрес «Bootstrap»; включите DNS ядра, если нужны доменные правила и DoH/DoT.')); return; }
     const via = d.remote_detour || S.settings.final;
     const enc = /^(https|tls|quic|h3):\/\//i.test((d.remote || '').trim());
     clear(body).append(
@@ -30,6 +30,6 @@ export default async function (root) {
       ed.el);
   }
   apd(root, pageHead('DNS', 'Разрешение имён внутри ядра'),
-    h('div', { class: 'card' }, chk(d, 'enabled', 'Включить DNS ядра', 'Если выключено, ядро использует системный DNS, а доменные правила работают хуже.', { onchange: draw }), body));
+    h('div', { class: 'card' }, chk(d, 'enabled', 'Включить DNS ядра', 'Если выключено, ядро не перехватывает DNS клиентов, а доменные правила по DNS работают хуже.', { onchange: draw }), body));
   draw();
 }
