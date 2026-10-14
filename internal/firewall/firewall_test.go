@@ -141,3 +141,11 @@ func TestIfaceRoutes(t *testing.T) {
 		t.Fatal("без интерфейсов скрипт не нужен")
 	}
 }
+
+func TestTProxyNeedsMarkAndTable(t *testing.T) {
+	s := model.Default()
+	s.Firewall.Mode, s.Firewall.Backend, s.Firewall.FwMark = "tproxy", "nft", 0
+	if _, err := FromSettings(s, "nft"); err == nil {
+		t.Fatal("fwmark 0 дал бы «ip rule add fwmark 0» — должна быть ошибка")
+	}
+}

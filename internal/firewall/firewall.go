@@ -101,6 +101,9 @@ func (sp *Spec) validate() error {
 			}
 		}
 	}
+	if sp.Mode == "tproxy" && (sp.FwMark <= 0 || sp.RouteTable <= 0) {
+		return fmt.Errorf("для tproxy задайте fwmark и номер таблицы маршрутизации (больше 0)")
+	}
 	if sp.Mode == "redirect" && sp.RedirPort <= 0 || sp.Mode == "tproxy" && sp.TProxyPort <= 0 {
 		return fmt.Errorf("не задан порт для режима %s", sp.Mode)
 	}
