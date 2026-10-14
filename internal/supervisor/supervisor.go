@@ -21,6 +21,7 @@ import (
 	"corepanel/internal/installer"
 	"corepanel/internal/model"
 	"corepanel/internal/platform"
+	"corepanel/internal/rulesets"
 )
 
 // LogBuffer — кольцевой буфер строк лога с подпиской.
@@ -227,6 +228,10 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	for _, w := range rulesets.Prepare(context.Background(), dir, set.RuleSets, s.rulesetFetcher(set, 0), false) {
+		res.Warnings = append(res.Warnings, w)
+		s.Logs.Add("[panel] " + w)
+	}
 	cfgPath := filepath.Join(dir, res.Filename)
 	if err := writeAtomic(cfgPath, []byte(res.Config), 0o600); err != nil {
 		return err
@@ -277,6 +282,7 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	go pump(stdout)
 	go pump(stderr)
 	done := s.done
+	go s.refreshRuleSets(set, dir, done)
 	go func() {
 		wg.Wait()
 		err := cmd.Wait()
@@ -322,6 +328,41 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 		}
 	}
 	return nil
+}
+
+// rulesetFetcher скачивает текстовые наборы: напрямую (с зеркалом, если оно включено), затем через прокси ядра.
+func (s *Supervisor) rulesetFetcher(set *model.Settings, proxyPort int) rulesets.Fetcher {
+	mirror := ""
+	if v := set.General.UpdateVia; v == "" || v == "direct" {
+		mirror = set.Download.Mirror
+	}
+	return rulesets.NewFetcher(mirror, proxyPort)
+}
+
+// refreshRuleSets обновляет текстовые наборы, пока ядро работает; ядро само перечитывает изменённые локальные файлы.
+func (s *Supervisor) refreshRuleSets(set *model.Settings, dir string, done <-chan struct{}) {
+	has := false
+	for _, rs := range set.RuleSets {
+		if rulesets.IsText(rs) {
+			has = true
+		}
+	}
+	if !has {
+		return
+	}
+	t := time.NewTicker(10 * time.Minute)
+	defer t.Stop()
+	fetch := s.rulesetFetcher(set, set.Inbounds.MixedPort)
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			for _, w := range rulesets.Prepare(context.Background(), dir, set.RuleSets, fetch, false) {
+				s.Logs.Add("[panel] " + w)
+			}
+		}
+	}
 }
 
 func (s *Supervisor) onExit(cmd *exec.Cmd, err error) {

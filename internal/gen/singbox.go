@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"corepanel/internal/model"
+	"corepanel/internal/rulesets"
 )
 
 // Схема конфигурации: sing-box 1.12 и новее (DNS-серверы с полем type,
@@ -582,6 +583,11 @@ func sbRoute(s *model.Settings, p *plan) *O {
 	if len(p.sets) > 0 {
 		var sets []any
 		for _, sp := range p.sets {
+			if sp.Format == "text" {
+				sets = append(sets, NewO().Set("type", "local").Set("tag", sp.Name).
+					Set("format", "source").Set("path", rulesets.File(sp.Name)))
+				continue
+			}
 			o := NewO().Set("type", "remote").Set("tag", sp.Name)
 			if sp.Format == "json" {
 				o.Set("format", "source")

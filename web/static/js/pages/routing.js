@@ -62,10 +62,10 @@ export default async function (root) {
           h('b', r.name || 'новый набор'), status, h('span', { class: 'grow' }),
           h('button', { class: 'btn sm danger', onclick: () => { const old = ruleOf(r.name); if (old) s.rules.splice(s.rules.indexOf(old), 1); s.rule_sets.splice(i, 1); st.touch(); ed.redraw(); drawSets(); } }, 'Удалить')),
         fgrid(field('Куда направить трафик', outSel, 'Создаёт правило «этот набор → выбранный выход». Правила работают сверху вниз: новое добавляется в конец списка правил, а всё, что не подошло, уходит в «Final».'),
-          field('Адрес списка (URL)', txt(r, 'url', { ph: 'https://…/set.srs' }), 'Файл .srs или .json с доменами или подсетями; ядро скачивает и обновляет его само.')),
+          field('Адрес списка (URL)', txt(r, 'url', { ph: 'https://…/set.srs' }), 'Файл .srs или .json — ядро скачивает и обновляет его само. Обычный список (.lst, .txt: домен в строке, можно подсети) панель скачивает и преобразует сама.')),
         h('details', { style: 'margin-top:6px' }, h('summary', { class: 'small' }, 'Дополнительно: имя, формат, обновление'),
           fgrid(field('Имя', txt(r, 'name', { ph: 'my-set', onchange: () => { const c = ruleOf(prev); if (c) c.values = [r.name]; prev = r.name; ed.redraw(); } }), 'Внутреннее имя набора; в правилах он выбирается по нему.'),
-            field('Формат', sel(r, 'format', [['', 'определить по URL'], ['srs', 'srs (бинарный)'], ['json', 'json (текстовый)']]), 'Обычно определяется по окончанию ссылки.'),
+            field('Формат', sel(r, 'format', [['', 'определить по URL'], ['srs', 'srs (бинарный)'], ['json', 'json (текстовый)'], ['text', 'список (домен в строке)']]), 'Обычно определяется по окончанию ссылки.'),
             field('Обновлять раз в', dur(r, 'interval', [['сек', 1], ['мин', 60], ['ч', 3600], ['сут', 86400]], { min: 0 }), 'По умолчанию раз в сутки. 0 — значение по умолчанию.')))));
     });
   }

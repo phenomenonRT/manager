@@ -62,6 +62,15 @@ func formatCore(format string) string {
 	return ""
 }
 
+// formatFits говорит, понимает ли ядро набор в этом формате. Обычный текстовый список
+// sing-box по сети не читает, поэтому панель сама превращает его в локальный JSON (пакет rulesets).
+func formatFits(format, core string) bool {
+	if format == "text" && core == model.CoreSingbox {
+		return true
+	}
+	return formatCore(format) == core
+}
+
 func guessFormat(u string) string {
 	if pu, err := url.Parse(u); err == nil {
 		switch strings.ToLower(path.Ext(pu.Path)) {
@@ -73,7 +82,7 @@ func guessFormat(u string) string {
 			return "mrs"
 		case ".yaml", ".yml":
 			return "yaml"
-		case ".txt", ".list":
+		case ".txt", ".list", ".lst":
 			return "text"
 		}
 	}
@@ -140,7 +149,7 @@ func buildPlan(s *model.Settings, core string) *plan {
 			p.warn("набор правил «%s»: не удалось определить формат по URL — укажите его вручную, набор пропущен", rs.Name)
 			continue
 		}
-		if formatCore(f) != core {
+		if !formatFits(f, core) {
 			p.warn("набор правил «%s» (формат %s) не подходит для выбранного ядра и пропущен", rs.Name, f)
 			continue
 		}

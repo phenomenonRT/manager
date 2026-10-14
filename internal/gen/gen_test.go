@@ -449,3 +449,24 @@ func TestTunStrictRoute(t *testing.T) {
 		t.Errorf("выключенный strict_route не должен выводиться")
 	}
 }
+
+func TestTextRuleSetLocalOnSingbox(t *testing.T) {
+	s := model.Default()
+	s.Core = model.CoreAmnezia
+	s.RuleSets = []model.RuleSet{{Name: "set-2", URL: "https://raw.githubusercontent.com/x/y/main/inside-raw.lst"}}
+	s.Rules = []model.Rule{{Type: "rule_set", Values: []string{"set-2"}, Outbound: "direct"}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "set-2") {
+			t.Fatalf("лишнее предупреждение: %s", w)
+		}
+	}
+	for _, want := range []string{`"type": "local"`, `"path": "rulesets/set-2.json"`, `"format": "source"`} {
+		if !strings.Contains(res.Config, want) && !strings.Contains(strings.ReplaceAll(res.Config, `":"`, `": "`), want) {
+			t.Fatalf("нет %s:\n%s", want, res.Config)
+		}
+	}
+}
