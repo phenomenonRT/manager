@@ -149,9 +149,21 @@ func sbDNS(s *model.Settings, p *plan) (*O, error) {
 	if detour == "" {
 		detour = s.Final
 	}
+	// Local DNS можно провести через VPN. Имена самих узлов при этом разрешаются напрямую по IP bootstrap,
+	// иначе узлу для подключения понадобился бы он сам.
+	localDetour := s.DNS.LocalDetour
+	nodeDNS := "local"
+	if localDetour != "" && localDetour != "direct" && localDetour != "block" {
+		if local.Type == "local" {
+			p.warn("Local DNS «local» — это системный резолвер роутера, через VPN его провести нельзя; выберите IP-адрес")
+			localDetour = ""
+		} else {
+			nodeDNS = "bootstrap"
+		}
+	}
 	servers := []any{
 		sbDNSServer("bootstrap", boot, ""),
-		sbDNSServer("local", local, ""),
+		sbDNSServer("local", local, localDetour),
 		sbDNSServer("remote", remote, detour),
 	}
 	fake := s.DNS.Mode == "fakeip"
@@ -166,7 +178,7 @@ func sbDNS(s *model.Settings, p *plan) (*O, error) {
 
 	var rules []any
 	if doms := nodeServerDomains(s); len(doms) > 0 {
-		rules = append(rules, NewO().Set("domain", doms).Set("action", "route").Set("server", "local"))
+		rules = append(rules, NewO().Set("domain", doms).Set("action", "route").Set("server", nodeDNS))
 	}
 	for _, r := range p.dnsRules {
 		rule := sbMatch(r)

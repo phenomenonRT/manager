@@ -470,3 +470,38 @@ func TestTextRuleSetLocalOnSingbox(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalDNSDetour(t *testing.T) {
+	s := sample()
+	s.DNS.Enabled = true
+	s.DNS.Local = "77.88.8.8"
+	s.DNS.LocalDetour = s.Nodes[0].Name
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(res.Config), &m); err != nil {
+		t.Fatal(err)
+	}
+	dns := m["dns"].(map[string]any)
+	found := false
+	for _, x := range dns["servers"].([]any) {
+		sv := x.(map[string]any)
+		if sv["tag"] == "local" {
+			found = sv["detour"] == s.Nodes[0].Name
+		}
+	}
+	if !found {
+		t.Fatalf("local DNS без detour: %s", res.Config)
+	}
+	for _, x := range dns["rules"].([]any) {
+		r := x.(map[string]any)
+		if _, ok := r["domain"]; ok && r["server"] == "local" {
+			t.Fatal("имена узлов не должны идти через Local, который сам ходит через узел")
+		}
+	}
+	if mh, err := Mihomo(s); err != nil || !strings.Contains(mh.Config, "#"+s.Nodes[0].Name) {
+		t.Fatalf("mihomo: %v", err)
+	}
+}

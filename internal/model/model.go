@@ -84,8 +84,9 @@ type DNS struct {
 	Mode         string `json:"mode"`   // normal | fakeip
 	Remote       string `json:"remote"` // https://1.1.1.1/dns-query
 	RemoteDetour string `json:"remote_detour"`
-	Local        string `json:"local"`     // 77.88.8.8
-	Bootstrap    string `json:"bootstrap"` // IP для разрешения имён DoH/DoT серверов
+	Local        string `json:"local"`        // 77.88.8.8
+	LocalDetour  string `json:"local_detour"` // выход для Local DNS; пусто — напрямую
+	Bootstrap    string `json:"bootstrap"`    // IP для разрешения имён DoH/DoT серверов
 	FakeIPRange  string `json:"fakeip_range"`
 	Final        string `json:"final"` // remote | local
 	Rules        []Rule `json:"rules,omitempty"`

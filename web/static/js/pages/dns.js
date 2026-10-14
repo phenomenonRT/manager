@@ -9,7 +9,7 @@ export default async function (root) {
   const ed = ruleEditor({ rules: d.rules, dns: true, outs: [['remote', 'remote — основной (через прокси)'], ['local', 'local — локальный/провайдера'], ['block', 'block — не отвечать']], defaultOut: 'local' });
   const body = h('div');
   function draw() {
-    if (!d.enabled) { clear(body).append(note('', 'DNS ядра выключен: клиентские DNS-запросы ядро не перехватывает и идут по обычным правилам. Сами имена (проверка задержки, наборы правил) ядро разрешает напрямую через адрес «Bootstrap»; включите DNS ядра, если нужны доменные правила и DoH/DoT.')); return; }
+    if (!d.enabled) { clear(body).append(note('', 'DNS ядра выключен: клиентские DNS-запросы ядро не перехватывает и идут по обычным правилам. Сами имена (проверка задержки, наборы правил) ядро разрешает напрямую через адрес «Bootstrap»; включите DNS ядра, если нужны доменные правила, DoH/DoT и проведение DNS через VPN («Remote через», «Local через»). Запросы клиентов при выключенном DNS идут по обычным правилам — то есть в VPN, если он выбран по умолчанию (Final).')); return; }
     const via = d.remote_detour || S.settings.final;
     const enc = /^(https|tls|quic|h3):\/\//i.test((d.remote || '').trim());
     clear(body).append(
@@ -22,6 +22,7 @@ export default async function (root) {
         field('Local DNS', dnsPick(d, 'local', 'local', { ph: '77.88.8.8' }), 'Обычный DNS для российских и локальных доменов. Выберите из списка, DNS роутера (local) или введите свой адрес.'),
         field('Bootstrap DNS', dnsPick(d, 'bootstrap', 'bootstrap', { ph: '77.88.8.8' }), 'IP-адрес обычного DNS, которым ядро определяет адрес самого DoH/DoT-сервера (иначе «курица и яйцо»).'),
         field('Remote через', sel(d, 'remote_detour', [['', 'по умолчанию (final)'], ...st.outbounds().filter((o) => o[0] !== 'block')]), 'Через какой узел или группу ходить к Remote DNS. Пусто — как весь остальной трафик.'),
+        field('Local через', sel(d, 'local_detour', [['', 'напрямую'], ...st.outbounds().filter((o) => o[0] !== 'block' && o[0] !== 'direct')]), 'Через какой узел или группу ходить к Local DNS. Пусто — напрямую, мимо VPN. Имена самих узлов ядро всё равно разрешает напрямую.'),
         d.mode === 'fakeip' ? field('Диапазон fake-ip', txt(d, 'fakeip_range', { ph: '198.18.0.0/15' }), 'Служебная подсеть, не должна пересекаться с вашей LAN.') : null,
         field('DNS по умолчанию (final)', sel(d, 'final', [['remote', 'remote'], ['local', 'local']]), 'Какой сервер отвечает на домены, не попавшие под DNS-правила.')),
       h('h3', 'DNS-правила'),

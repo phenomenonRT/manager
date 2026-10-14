@@ -168,7 +168,15 @@ func mhDNS(s *model.Settings, p *plan) (*O, error) {
 	if detour != "" && detour != "direct" && detour != "block" && (remote.Type == "https" || remote.Type == "h3" || remote.Type == "tls" || remote.Type == "quic") {
 		remoteStr += "#" + detour
 	}
-	localStr := mhDNSAddr(local, s.DNS.Local)
+	localDirect := mhDNSAddr(local, s.DNS.Local)
+	localStr := localDirect
+	if ld := s.DNS.LocalDetour; ld != "" && ld != "direct" && ld != "block" {
+		if local.Type == "local" {
+			p.warn("Local DNS «local» — системный резолвер роутера, через VPN его провести нельзя; выберите IP-адрес")
+		} else {
+			localStr += "#" + ld
+		}
+	}
 
 	d := NewO().Set("enable", true).Set("listen", s.DNS.Listen).Set("ipv6", s.General.IPv6)
 	fake := s.DNS.Mode == "fakeip"
@@ -185,11 +193,11 @@ func mhDNS(s *model.Settings, p *plan) (*O, error) {
 	} else {
 		d.Set("nameserver", []string{remoteStr})
 	}
-	d.Set("proxy-server-nameserver", []string{localStr})
+	d.Set("proxy-server-nameserver", []string{localDirect})
 
 	policy := NewO()
 	for _, doms := range chunkDomains(nodeServerDomains(s)) {
-		policy.Set(doms, localStr)
+		policy.Set(doms, localDirect)
 	}
 	for _, r := range p.dnsRules {
 		srv := ""
