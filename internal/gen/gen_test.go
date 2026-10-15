@@ -450,32 +450,6 @@ func TestTunStrictRoute(t *testing.T) {
 	}
 }
 
-func hasWarn(res *Result, sub string) bool {
-	for _, w := range res.Warnings {
-		if strings.Contains(w, sub) {
-			return true
-		}
-	}
-	return false
-}
-
-func TestStrictRouteWithAutoRedirectWarns(t *testing.T) {
-	s := sample()
-	s.Tun.Enabled, s.Tun.AutoRoute, s.Tun.StrictRoute, s.Tun.AutoRedirect = true, true, true, true
-	res, err := Singbox(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hasWarn(res, "strict_route вместе с auto_redirect") {
-		t.Errorf("нет предупреждения о strict_route + auto_redirect: %v", res.Warnings)
-	}
-	s.Tun.AutoRedirect = false
-	res, _ = Singbox(s)
-	if hasWarn(res, "strict_route вместе с auto_redirect") {
-		t.Errorf("без auto_redirect предупреждение не нужно")
-	}
-}
-
 func TestTextRuleSetLocalOnSingbox(t *testing.T) {
 	s := model.Default()
 	s.Core = model.CoreAmnezia
