@@ -356,6 +356,20 @@ func nftSocketSupported() bool {
 	return cmd.Run() == nil
 }
 
+// BlockIPv6 строит скрипты блокировки IPv6: маршрут «unreachable ::/0» с наименьшей метрикой перекрывает
+// маршрут по умолчанию от провайдера, а более специфичные маршруты (LAN, link-local) продолжают работать.
+// Клиенты сразу получают ICMP «недостижимо» и переходят на IPv4. Возвращает nil, если блокировка не нужна.
+func BlockIPv6(s *model.Settings) *Scripts {
+	if !s.Tun.Enabled || !s.Tun.BlockIPv6 {
+		return nil
+	}
+	return &Scripts{
+		Up: "[ -d /proc/sys/net/ipv6 ] || exit 0\n" + // в ядре нет IPv6 — блокировать нечего
+			"ip -6 route replace unreachable ::/0 metric 1\n",
+		Down: "ip -6 route del unreachable ::/0 metric 1 2>/dev/null || true\n",
+	}
+}
+
 // IfaceRoutes строит скрипты, которые направляют устройства LAN в свои TUN-интерфейсы:
 // отдельная таблица маршрутов на интерфейс и правила «from источник». Возвращает nil, если направлять нечего.
 func IfaceRoutes(s *model.Settings) *Scripts {

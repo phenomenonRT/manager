@@ -38,6 +38,7 @@ type coreState struct {
 	// а снимать нужно именно те, что были применены.
 	FwDown  string `json:"fw_down,omitempty"`
 	IfwDown string `json:"ifw_down,omitempty"`
+	V6Down  string `json:"v6_down,omitempty"`
 }
 
 func (s *Supervisor) stateFile() string {
@@ -80,6 +81,9 @@ func (s *Supervisor) saveStateLocked() error {
 	}
 	if s.ifw != nil {
 		st.IfwDown = s.ifw.Down
+	}
+	if s.v6 != nil {
+		st.V6Down = s.v6.Down
 	}
 	b, err := json.Marshal(st)
 	if err != nil {
@@ -171,6 +175,9 @@ func (s *Supervisor) Adopt(set *model.Settings) bool {
 	}
 	if st.IfwDown != "" {
 		s.ifw = &firewall.Scripts{Down: st.IfwDown}
+	}
+	if st.V6Down != "" {
+		s.v6 = &firewall.Scripts{Down: st.V6Down}
 	}
 	if set != nil {
 		if res, err := Render(set); err == nil {

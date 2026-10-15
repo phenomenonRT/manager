@@ -89,6 +89,7 @@ type Tun struct {
 	StrictRoute  bool     `json:"strict_route"`
 	AutoRedirect bool     `json:"auto_redirect"`
 	DNSHijack    bool     `json:"dns_hijack"`
+	BlockIPv6    bool     `json:"block_ipv6,omitempty"` // пока работает ядро, IPv6 недостижим (TUN только IPv4)
 	ExcludeCIDR  []string `json:"exclude_cidr,omitempty"`
 }
 
