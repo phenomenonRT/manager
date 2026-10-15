@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"corepanel/internal/firewall"
 )
 
 const tickCore = `trap 'exit 0' TERM; i=0; while true; do echo "tick $i"; i=$((i+1)); sleep 0.1; done`
@@ -37,6 +39,9 @@ func TestAdoptRunningCore(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid := old.Status().PID
+	old.mu.Lock()
+	old.v6 = &firewall.Scripts{Down: "true"}
+	old.mu.Unlock()
 	if !old.HandOver() {
 		t.Fatal("HandOver вернул false при работающем ядре")
 	}
@@ -48,6 +53,9 @@ func TestAdoptRunningCore(t *testing.T) {
 	st := fresh.Status()
 	if st.State != "running" || st.PID != pid {
 		t.Fatalf("после подхвата: %+v, ждали pid %d", st, pid)
+	}
+	if fresh.v6 == nil || fresh.v6.Down != "true" {
+		t.Errorf("скрипт снятия блокировки IPv6 не передан новой панели: %+v", fresh.v6)
 	}
 	waitFor(t, "строки ядра в логе новой панели", 3*time.Second, func() bool { return logHas(fresh, "tick ") })
 

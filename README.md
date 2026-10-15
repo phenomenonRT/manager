@@ -10,7 +10,7 @@
 - **Группы:** selector, urltest, fallback, loadbalance (в sing-box fallback/loadbalance заменяются urltest с предупреждением).
 - **Маршрутизация:** правила по домену, IP, порту, протоколу, наборам правил (srs/mrs/…), geosite/geoip; порядок, пресеты, исходящий по умолчанию.
 - **DNS:** DoH/DoT/UDP, FakeIP, DNS-правила, bootstrap, DNS через прокси.
-- **Сеть:** входящие mixed/redirect/tproxy, TUN (stack, auto_route, auto_redirect, strict_route), прозрачный прокси через **nft** или **iptables** для выбранных LAN-интерфейсов с include/exclude клиентов, перехват DNS; просмотр генерируемых скриптов.
+- **Сеть:** входящие mixed/redirect/tproxy, TUN (stack, auto_route, auto_redirect, strict_route, блокировка IPv6 на время работы ядра), прозрачный прокси через **nft** или **iptables** для выбранных LAN-интерфейсов с include/exclude клиентов, перехват DNS; просмотр генерируемых скриптов.
 - **Расширенные добавки:** любые поля ядра через глубокое слияние JSON (`override_singbox` / `override_mihomo`).
 - **Мониторинг:** статус, трафик, подключения, выбор узла и проверка задержки (через Clash API), живые логи.
 - Безопасность: по умолчанию панель открывается **без пароля, но только из локальной сети** (запросы с публичных адресов отклоняются). Вход включается в разделе «Система»: пароль — тот же, что у root для SSH (проверяется по shadow; md5/sha256/sha512-crypt). HttpOnly/SameSite cookie, защита от CSRF, ограничение перебора. Забыли пароль — по SSH: `corepanel auth off`.

@@ -149,3 +149,28 @@ func TestTProxyNeedsMarkAndTable(t *testing.T) {
 		t.Fatal("fwmark 0 дал бы «ip rule add fwmark 0» — должна быть ошибка")
 	}
 }
+
+func TestBlockIPv6(t *testing.T) {
+	s := model.Default()
+	if BlockIPv6(s) != nil {
+		t.Error("по умолчанию блокировки IPv6 быть не должно")
+	}
+	s.Tun.BlockIPv6 = true
+	if BlockIPv6(s) != nil {
+		t.Error("без включённого TUN блокировка не нужна")
+	}
+	s.Tun.Enabled = true
+	sc := BlockIPv6(s)
+	if sc == nil {
+		t.Fatal("блокировка не построена")
+	}
+	if !strings.Contains(sc.Up, "/proc/sys/net/ipv6") {
+		t.Errorf("up должен пропускать системы без IPv6: %q", sc.Up)
+	}
+	if !strings.Contains(sc.Up, "ip -6 route replace unreachable ::/0 metric 1") {
+		t.Errorf("up: %q", sc.Up)
+	}
+	if !strings.Contains(sc.Down, "ip -6 route del unreachable ::/0 metric 1") || !strings.Contains(sc.Down, "|| true") {
+		t.Errorf("down должен снимать маршрут и не падать, если его нет: %q", sc.Down)
+	}
+}

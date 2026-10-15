@@ -103,6 +103,7 @@ type Supervisor struct {
 	fwErr     string
 	fw        *firewall.Scripts
 	ifw       *firewall.Scripts // маршруты устройств в свои интерфейсы
+	v6        *firewall.Scripts // блокировка IPv6 на время работы ядра
 	desired   bool
 	restarts  int
 	waitNet   bool // ядро не стартовало из-за отсутствия сети: повторяем запуск без красной ошибки
@@ -325,6 +326,14 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 			s.Logs.Add("[panel] устройства направлены в свои интерфейсы")
 		}
 	}
+	if sc := firewall.BlockIPv6(set); sc != nil {
+		if err := firewall.Apply(context.Background(), sc); err != nil {
+			s.Logs.Add("[panel] блокировка IPv6: " + err.Error())
+		} else {
+			s.v6 = sc
+			s.Logs.Add("[panel] IPv6 заблокирован на время работы ядра")
+		}
+	}
 	if sp, err := firewall.FromSettings(set, s.Info.FirewallBE); err != nil {
 		s.fwErr = err.Error()
 		s.Logs.Add("[panel] брандмауэр: " + err.Error())
@@ -405,6 +414,10 @@ func (s *Supervisor) onExit(cmd *exec.Cmd, err error) {
 		firewall.Remove(context.Background(), s.ifw)
 		s.ifw = nil
 	}
+	if s.v6 != nil {
+		firewall.Remove(context.Background(), s.v6)
+		s.v6 = nil
+	}
 	if desired {
 		s.lastErr = msg
 	}
@@ -475,8 +488,8 @@ func (s *Supervisor) waitNetwork() {
 func (s *Supervisor) Stop() error {
 	s.mu.Lock()
 	s.desired, s.waitNet = false, false
-	cmd, done, fw, ifw := s.cmd, s.done, s.fw, s.ifw
-	s.fw, s.ifw = nil, nil
+	cmd, done, fw, ifw, v6 := s.cmd, s.done, s.fw, s.ifw, s.v6
+	s.fw, s.ifw, s.v6 = nil, nil, nil
 	s.clearState()
 	s.mu.Unlock()
 
@@ -485,6 +498,9 @@ func (s *Supervisor) Stop() error {
 	}
 	if ifw != nil {
 		firewall.Remove(context.Background(), ifw)
+	}
+	if v6 != nil {
+		firewall.Remove(context.Background(), v6)
 	}
 	if cmd == nil || cmd.Process == nil {
 		return nil
