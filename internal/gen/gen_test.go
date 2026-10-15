@@ -250,6 +250,9 @@ func TestIfaceNode(t *testing.T) {
 	if !strings.Contains(string(res.Config), `"bind_interface": "sstp-vpn0"`) {
 		t.Errorf("нет bind_interface: %s", res.Config)
 	}
+	if !strings.Contains(string(res.Config), `"routing_mark": 512`) {
+		t.Errorf("нет routing_mark: %s", res.Config)
+	}
 	s.Nodes[0].BindInterface = ""
 	for _, i := range s.Validate() {
 		if i.Level == "error" && strings.Contains(i.Message, "sstp") {

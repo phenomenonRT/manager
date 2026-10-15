@@ -130,8 +130,9 @@ func v4only(list []string) []string {
 
 // Scripts — готовые скрипты включения и отключения.
 type Scripts struct {
-	Up   string `json:"up"`
-	Down string `json:"down"`
+	Up      string `json:"up"`
+	Down    string `json:"down"`
+	Refresh string `json:"-"` // повторное создание маршрутов (они исчезают, когда интерфейс переподключается)
 }
 
 // Generate строит скрипты.
@@ -406,4 +407,37 @@ func IfaceRoutes(s *model.Settings) *Scripts {
 		return nil
 	}
 	return &Scripts{Up: up.String(), Down: tolerant(down.String())}
+}
+
+// NodeIfaceRoutes строит маршруты для узлов «Системный VPN (интерфейс)»: метка пакетов ядра → своя таблица →
+// default через интерфейс. Возвращает nil, если таких узлов нет.
+func NodeIfaceRoutes(s *model.Settings) *Scripts {
+	var up, down, refresh strings.Builder
+	n := 0
+	for _, nd := range s.Nodes {
+		slot := s.IfaceNodeSlot(nd.Name)
+		if nd.Type != "iface" || slot < 0 || !ifaceRe.MatchString(nd.BindInterface) {
+			continue
+		}
+		n++
+		mark, table, pref := model.IfaceNodeMarkBase+slot, model.IfaceNodeTableBase+slot, model.IfaceNodePrefBase+slot
+		route := fmt.Sprintf("ip route replace default dev %s table %d 2>/dev/null || true\n", nd.BindInterface, table)
+		refresh.WriteString(route)
+		up.WriteString(route)
+		fmt.Fprintf(&up, "ip rule del fwmark %d lookup %d 2>/dev/null || true\n", mark, table)
+		fmt.Fprintf(&up, "ip rule add fwmark %d lookup %d pref %d\n", mark, table, pref)
+		fmt.Fprintf(&down, "ip rule del fwmark %d lookup %d\n", mark, table)
+		fmt.Fprintf(&down, "ip route flush table %d\n", table)
+	}
+	if n == 0 {
+		return nil
+	}
+	return &Scripts{Up: up.String(), Down: tolerant(down.String()), Refresh: refresh.String()}
+}
+
+// Refresh повторно применяет маршруты узлов-интерфейсов (ошибки игнорируются).
+func (sc *Scripts) RunRefresh(ctx context.Context) {
+	if sc != nil && sc.Refresh != "" {
+		_, _ = run(ctx, sc.Refresh)
+	}
 }

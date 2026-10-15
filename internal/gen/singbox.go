@@ -458,6 +458,11 @@ func sbTransport(n model.Node) *O {
 func sbDial(o *O, s *model.Settings, n model.Node) {
 	o.Opt("detour", n.Detour)
 	o.Opt("bind_interface", n.BindInterface)
+	if n.Type == "iface" {
+		if slot := s.IfaceNodeSlot(n.Name); slot >= 0 {
+			o.Set("routing_mark", model.IfaceNodeMarkBase+slot)
+		}
+	}
 	o.Opt("tcp_fast_open", s.General.TCPFastOpen)
 }
 

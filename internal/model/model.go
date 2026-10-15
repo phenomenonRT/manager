@@ -635,3 +635,27 @@ func groupCycle(gs []Group) string {
 	}
 	return ""
 }
+
+// Для узлов «Системный VPN (интерфейс)» панель создаёт отдельную таблицу маршрутов: пакеты ядра с меткой
+// уходят в неё и выходят через нужный интерфейс, даже если в основной таблице нет маршрута по умолчанию
+// через него (так бывает у sstp, l2tp, pptp). Метка, таблица и приоритет зависят от номера узла.
+const (
+	IfaceNodeMarkBase  = 0x200
+	IfaceNodeTableBase = 300
+	IfaceNodePrefBase  = 10200
+)
+
+// IfaceNodeSlot — порядковый номер включённого узла-интерфейса среди таких же узлов; -1, если это не он.
+func (s *Settings) IfaceNodeSlot(name string) int {
+	i := 0
+	for _, n := range s.Nodes {
+		if n.Type != "iface" || n.Disabled || n.BindInterface == "" {
+			continue
+		}
+		if n.Name == name {
+			return i
+		}
+		i++
+	}
+	return -1
+}

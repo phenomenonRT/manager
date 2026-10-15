@@ -103,6 +103,7 @@ type Supervisor struct {
 	fwErr     string
 	fw        *firewall.Scripts
 	ifw       *firewall.Scripts // маршруты устройств в свои интерфейсы
+	nfw       *firewall.Scripts // маршруты узлов «Системный VPN (интерфейс)»
 	v6        *firewall.Scripts // блокировка IPv6 на время работы ядра
 	desired   bool
 	restarts  int
@@ -310,6 +311,25 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	case <-time.After(1500 * time.Millisecond):
 	}
 
+	if sc := firewall.NodeIfaceRoutes(set); sc != nil {
+		if err := firewall.Apply(context.Background(), sc); err != nil {
+			s.Logs.Add("[panel] маршруты узлов-интерфейсов: " + err.Error())
+		} else {
+			s.nfw = sc
+			go func(sc *firewall.Scripts, done <-chan struct{}) { // маршруты пропадают, когда VPN-интерфейс переподключается
+				t := time.NewTicker(15 * time.Second)
+				defer t.Stop()
+				for {
+					select {
+					case <-done:
+						return
+					case <-t.C:
+						sc.RunRefresh(context.Background())
+					}
+				}
+			}(sc, done)
+		}
+	}
 	if sc := firewall.IfaceRoutes(set); sc != nil {
 		if err := firewall.Apply(context.Background(), sc); err != nil {
 			s.Logs.Add("[panel] маршруты устройств в свои интерфейсы: " + err.Error())
@@ -480,8 +500,8 @@ func (s *Supervisor) waitNetwork() {
 func (s *Supervisor) Stop() error {
 	s.mu.Lock()
 	s.desired, s.waitNet = false, false
-	cmd, done, fw, ifw, v6 := s.cmd, s.done, s.fw, s.ifw, s.v6
-	s.fw, s.ifw, s.v6 = nil, nil, nil
+	cmd, done, fw, ifw, nfw, v6 := s.cmd, s.done, s.fw, s.ifw, s.nfw, s.v6
+	s.fw, s.ifw, s.nfw, s.v6 = nil, nil, nil, nil
 	s.clearState()
 	s.mu.Unlock()
 
@@ -490,6 +510,9 @@ func (s *Supervisor) Stop() error {
 	}
 	if ifw != nil {
 		firewall.Remove(context.Background(), ifw)
+	}
+	if nfw != nil {
+		firewall.Remove(context.Background(), nfw)
 	}
 	if v6 != nil {
 		firewall.Remove(context.Background(), v6)

@@ -185,7 +185,7 @@ export default async function (root) {
     try {
       const r = await get('api/logs?n=60');
       const ls = ((r && r.lines) || []).map((x) => (typeof x === 'string' ? x : x.text || x.line || JSON.stringify(x)));
-      const hit = ls.filter((x) => /ERROR|WARN|FATAL|handshake|timeout|refused|unreachable|resolve/i.test(x)).slice(-8);
+      const hit = ls.filter((x) => /\b(ERROR|WARN|FATAL|PANIC)\b/.test(x) || /handshake|timeout|refused|unreachable|lookup failed|no route|no such device/i.test(x)).slice(-8);
       diag = hit.length ? hit : ['В журнале ядра нет ошибок. Уровень логов «warn» не показывает рукопожатие AWG: поставьте info в «Входящие, TUN, сеть → Общие», перезапустите ядро и повторите проверку.'];
     } catch (e) { diag = null; }
   }

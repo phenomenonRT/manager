@@ -174,3 +174,24 @@ func TestBlockIPv6(t *testing.T) {
 		t.Errorf("down должен снимать маршрут и не падать, если его нет: %q", sc.Down)
 	}
 }
+
+func TestNodeIfaceRoutes(t *testing.T) {
+	s := model.Default()
+	s.Nodes = []model.Node{{Name: "a", Type: "vless"}, {Name: "sstp", Type: "iface", BindInterface: "sstp-vpn0"}, {Name: "off", Type: "iface", BindInterface: "x0", Disabled: true}, {Name: "l2tp", Type: "iface", BindInterface: "l2tp0"}}
+	sc := NodeIfaceRoutes(s)
+	if sc == nil {
+		t.Fatal("nil")
+	}
+	for _, w := range []string{"ip route replace default dev sstp-vpn0 table 300", "ip rule add fwmark 512 lookup 300 pref 10200", "ip route replace default dev l2tp0 table 301", "ip rule add fwmark 513 lookup 301"} {
+		if !strings.Contains(sc.Up, w) {
+			t.Fatalf("нет %q:\n%s", w, sc.Up)
+		}
+	}
+	if strings.Contains(sc.Up, "x0") || !strings.Contains(sc.Refresh, "table 300") || strings.Contains(sc.Refresh, "ip rule") {
+		t.Fatalf("лишнее или нет refresh:\n%s\n%s", sc.Up, sc.Refresh)
+	}
+	s.Nodes = s.Nodes[:1]
+	if NodeIfaceRoutes(s) != nil {
+		t.Fatal("без узлов-интерфейсов скрипт не нужен")
+	}
+}
