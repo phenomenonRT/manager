@@ -97,13 +97,24 @@ func (p *plan) addSet(sp setSpec) {
 	p.sets = append(p.sets, sp)
 }
 
-func clean(vals []string) []string {
+// clean убирает пустые значения и повторы (регистр у доменов и подсетей не важен), сохраняя порядок.
+func clean(vals []string, caseSensitive bool) []string {
 	var out []string
+	seen := map[string]bool{}
 	for _, v := range vals {
 		v = strings.TrimSpace(v)
-		if v != "" {
-			out = append(out, v)
+		if v == "" {
+			continue
 		}
+		k := v
+		if !caseSensitive {
+			k = strings.ToLower(v)
+		}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, v)
 	}
 	return out
 }
@@ -141,7 +152,7 @@ func buildPlan(s *model.Settings, core string) *plan {
 			if dns {
 				label = fmt.Sprintf("DNS-правило №%d", i+1)
 			}
-			vals := clean(r.Values)
+			vals := clean(r.Values, r.Type == "rule_set" || r.Type == "domain_regex")
 			t := r.Type
 			switch t {
 			case "private":

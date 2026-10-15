@@ -148,6 +148,12 @@ export function lines(obj, key, o = {}) {
   return h('textarea', {
     rows: o.rows || 3, placeholder: o.ph, spellcheck: 'false', value: (obj[key] || []).join('\n'),
     oninput: (e) => { obj[key] = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean); fire(o); },
+    // o.dedupe: при уходе из поля убираем повторяющиеся строки (регистр не важен, если не задано o.cs)
+    onblur: o.dedupe ? (e) => {
+      const seen = new Set();
+      obj[key] = (obj[key] || []).filter((v) => { const k = o.cs ? v : v.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+      e.target.value = obj[key].join('\n'); fire(o);
+    } : null,
   });
 }
 export function csv(obj, key, o = {}) {

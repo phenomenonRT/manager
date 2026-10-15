@@ -540,3 +540,25 @@ func TestCustomIfaceRoutesToOutbound(t *testing.T) {
 		t.Fatal("Validate должен ругаться на интерфейс vpn2")
 	}
 }
+
+func TestRuleValuesDeduplicated(t *testing.T) {
+	s := sample()
+	s.Rules = []model.Rule{{Type: "domain_suffix", Values: []string{"youtube.com", "YouTube.com", " youtube.com ", "ru", "ru"}, Outbound: "direct"}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(res.Config), &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range m["route"].(map[string]any)["rules"].([]any) {
+		if ds, ok := x.(map[string]any)["domain_suffix"].([]any); ok {
+			if len(ds) != 2 || ds[0] != "youtube.com" || ds[1] != "ru" {
+				t.Fatalf("повторы попали в конфиг: %v", ds)
+			}
+			return
+		}
+	}
+	t.Fatal("правило не найдено")
+}

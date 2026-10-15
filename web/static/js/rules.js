@@ -51,7 +51,7 @@ export function ruleEditor({ rules, outs, dns = false, defaultOut }) {
         h('button', { class: 'btn sm', 'aria-label': 'Ниже', disabled: i === rules.length - 1, onclick: () => move(i, i + 1) }, '↓'),
         h('button', { class: 'btn sm danger', 'aria-label': 'Удалить правило', onclick: () => { rules.splice(i, 1); st.touch(); draw(); } }, '✕')),
       h('div', { class: 'bd', style: r.type === 'private' ? 'grid-template-columns:1fr' : null },
-        r.type === 'private' ? null : lines(r, 'values', { rows: 2, ph: PH[r.type] || 'по одному значению в строке' }),
+        r.type === 'private' ? null : lines(r, 'values', { rows: 2, ph: PH[r.type] || 'по одному значению в строке', dedupe: true, cs: r.type === 'rule_set' || r.type === 'domain_regex' }),
         txt(r, 'note', { ph: 'заметка' })));
     return el;
   }
