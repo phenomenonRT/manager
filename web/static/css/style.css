@@ -298,3 +298,10 @@ main{min-width:0}
 .hs{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mute);flex:0 0 auto}
 .hs.ok{background:var(--ok)}.hs.err{background:var(--err)}
 .lowspace{color:var(--warn);font-weight:600}
+
+.dnsflow{border:1px solid var(--line);border-radius:var(--r);background:var(--surface2);padding:10px 14px;margin:0 0 14px}
+.dnsflow-l{margin:0;padding-left:20px;font-size:13px;line-height:1.7}
+.dnsflow-l .bad{color:var(--err)}
+.dnsblks{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:14px 0}
+.dnsblk{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.dnsblk-h{display:flex;flex-direction:column;margin-bottom:8px}
