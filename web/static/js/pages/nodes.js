@@ -94,7 +94,7 @@ export default async function (root) {
     vpnBox.append(h('div', { class: 'card' }, h('h2', 'VPN-интерфейсы (WireGuard)'),
       h('p', 'Узел WireGuard по умолчанию — обычный исходящий: трафик попадает в него только по правилам маршрутизации. Если включить «Системный интерфейс» (',
         h('code', 'system=true'), '), sing-box создаст настоящий сетевой интерфейс wg в ОС — его можно использовать в маршрутах роутера и других программах.'),
-      note('warn', 'Системный интерфейс поддерживает только sing-box и требует прав root. В Mihomo WireGuard работает как обычный исходящий, флаг игнорируется.'),
+      note('warn', 'Системный интерфейс требует прав root.'),
       wg.length ? h('div', { class: 'tw' }, h('table', h('thead', h('tr', h('th', 'Узел'), h('th', 'Адреса'), h('th', 'Системный интерфейс'))),
         h('tbody', wg.map((n) => h('tr', h('td', n.name, n.type === 'awg' ? badge('AWG') : null), h('td', { class: 'mono' }, (n.addresses || []).join(', ') || '—'),
           h('td', h('label', { class: 'check', style: 'margin:0' }, h('input', { type: 'checkbox', checked: !!n.system, onchange: (e) => { n.system = e.target.checked; st.touch(); } }), 'создавать')))))))

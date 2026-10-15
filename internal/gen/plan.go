@@ -29,8 +29,7 @@ var PrivateCIDRs = []string{
 type setSpec struct {
 	Name     string
 	URL      string
-	Format   string // srs|json|mrs|yaml|text
-	Behavior string // для Mihomo
+	Format   string // srs|json|text
 	Interval int
 	Auto     bool
 }
@@ -52,23 +51,10 @@ type plan struct {
 
 func (p *plan) warn(f string, a ...any) { p.warnings = append(p.warnings, fmt.Sprintf(f, a...)) }
 
-func formatCore(format string) string {
-	switch format {
-	case "srs", "json":
-		return model.CoreSingbox
-	case "mrs", "yaml", "text":
-		return model.CoreMihomo
-	}
-	return ""
-}
-
-// formatFits говорит, понимает ли ядро набор в этом формате. Обычный текстовый список
-// sing-box по сети не читает, поэтому панель сама превращает его в локальный JSON (пакет rulesets).
-func formatFits(format, core string) bool {
-	if format == "text" && core == model.CoreSingbox {
-		return true
-	}
-	return formatCore(format) == core
+// formatFits говорит, понимает ли ядро набор в этом формате: srs и json читает само, обычный
+// текстовый список панель сама превращает в локальный JSON (пакет rulesets).
+func formatFits(format string) bool {
+	return format == "srs" || format == "json" || format == "text"
 }
 
 func guessFormat(u string) string {
@@ -78,10 +64,6 @@ func guessFormat(u string) string {
 			return "srs"
 		case ".json":
 			return "json"
-		case ".mrs":
-			return "mrs"
-		case ".yaml", ".yml":
-			return "yaml"
 		case ".txt", ".list", ".lst":
 			return "text"
 		}
@@ -95,18 +77,10 @@ func geoSetName(kind, name string) string { return kind + "-" + strings.ToLower(
 
 func (p *plan) geoURL(s *model.Settings, kind, name string) string {
 	var u string
-	if p.core == model.CoreSingbox {
-		if kind == "geosite" {
-			u = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-" + name + ".srs"
-		} else {
-			u = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-" + name + ".srs"
-		}
+	if kind == "geosite" {
+		u = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-" + name + ".srs"
 	} else {
-		if kind == "geosite" {
-			u = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/" + name + ".mrs"
-		} else {
-			u = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/" + name + ".mrs"
-		}
+		u = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-" + name + ".srs"
 	}
 	if m := strings.TrimSpace(s.Download.Mirror); m != "" && (s.General.UpdateVia == "" || s.General.UpdateVia == "direct") {
 		u = strings.TrimRight(m, "/") + "/" + u
@@ -149,19 +123,11 @@ func buildPlan(s *model.Settings, core string) *plan {
 			p.warn("набор правил «%s»: не удалось определить формат по URL — укажите его вручную, набор пропущен", rs.Name)
 			continue
 		}
-		if !formatFits(f, core) {
+		if !formatFits(f) {
 			p.warn("набор правил «%s» (формат %s) не подходит для выбранного ядра и пропущен", rs.Name, f)
 			continue
 		}
-		beh := rs.Behavior
-		if core == model.CoreMihomo && beh == "" {
-			if f == "mrs" {
-				beh = "domain"
-			} else {
-				beh = "classical"
-			}
-		}
-		p.addSet(setSpec{Name: rs.Name, URL: rs.URL, Format: f, Behavior: beh, Interval: rs.Interval})
+		p.addSet(setSpec{Name: rs.Name, URL: rs.URL, Format: f, Interval: rs.Interval})
 		userSets[rs.Name] = true
 	}
 
@@ -185,15 +151,7 @@ func buildPlan(s *model.Settings, core string) *plan {
 				for _, v := range vals {
 					v = strings.ToLower(v)
 					n := geoSetName(t, v)
-					beh := "domain"
-					if t == "geoip" {
-						beh = "ipcidr"
-					}
-					f := "srs"
-					if core == model.CoreMihomo {
-						f = "mrs"
-					}
-					p.addSet(setSpec{Name: n, URL: p.geoURL(s, t, v), Format: f, Behavior: beh, Interval: 86400, Auto: true})
+					p.addSet(setSpec{Name: n, URL: p.geoURL(s, t, v), Format: "srs", Interval: 86400, Auto: true})
 					names = append(names, n)
 				}
 				t, vals = "rule_set", names
@@ -207,12 +165,7 @@ func buildPlan(s *model.Settings, core string) *plan {
 					}
 				}
 				vals = ok
-			case "protocol":
-				if core == model.CoreMihomo {
-					p.warn("%s: сопоставление по sniffed-протоколу есть только у sing-box — правило пропущено", label)
-					continue
-				}
-			case "domain", "domain_suffix", "domain_keyword", "domain_regex", "ip_cidr", "src_ip_cidr", "port", "port_range", "network":
+			case "protocol", "domain", "domain_suffix", "domain_keyword", "domain_regex", "ip_cidr", "src_ip_cidr", "port", "port_range", "network":
 			default:
 				p.warn("%s: неизвестный тип «%s» — пропущено", label, t)
 				continue
@@ -339,4 +292,11 @@ func hasTLS(n model.Node) bool {
 		return true
 	}
 	return n.TLS || n.Reality
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

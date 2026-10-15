@@ -1,4 +1,4 @@
-// Package supervisor запускает ядро (sing-box или Mihomo) и следит за ним.
+// Package supervisor запускает ядро (amnezia-box) и следит за ним.
 package supervisor
 
 import (
@@ -138,9 +138,6 @@ func Render(set *model.Settings) (*gen.Result, error) {
 		}
 		return nil, fmt.Errorf("в настройках есть ошибки: %s", strings.Join(msgs, "; "))
 	}
-	if set.Core == model.CoreMihomo {
-		return gen.Mihomo(set)
-	}
 	note := ""
 	if set.Tun.Enabled && set.Tun.AutoRedirect && !queueAvailable() {
 		cp := *set
@@ -251,14 +248,9 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 		return errors.New(s.lastErr)
 	}
 
-	var cmd *exec.Cmd
-	if set.Core == model.CoreMihomo {
-		cmd = exec.Command(bin, "-d", dir, "-f", cfgPath)
-	} else {
-		cmd = exec.Command(bin, "run", "-c", cfgPath, "-D", dir)
-		// страховка для сборок 1.14+: не падать из-за устаревшего неявного HTTP-клиента
-		cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
-	}
+	cmd := exec.Command(bin, "run", "-c", cfgPath, "-D", dir)
+	// страховка для сборок 1.14+: не падать из-за устаревшего неявного HTTP-клиента
+	cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Вывод ядра идёт в файл, а не в канал: при обновлении панель заменяет себя (exec), канал бы закрылся,
@@ -560,13 +552,8 @@ func (s *Supervisor) Status() Status {
 func checkConfig(core, bin, dir, cfg string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	var cmd *exec.Cmd
-	if core == model.CoreMihomo {
-		cmd = exec.CommandContext(ctx, bin, "-t", "-d", dir, "-f", cfg)
-	} else {
-		cmd = exec.CommandContext(ctx, bin, "check", "-c", cfg, "-D", dir)
-		cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
-	}
+	cmd := exec.CommandContext(ctx, bin, "check", "-c", cfg, "-D", dir)
+	cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(stripANSI(string(out))), err

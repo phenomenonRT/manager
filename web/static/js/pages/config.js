@@ -90,7 +90,7 @@ export default async function (root) {
         } catch (e) { status.textContent = 'Ошибка: ' + e.message; status.style.color = 'var(--err)'; }
       },
     });
-    return h('div', { class: 'card' }, h('div', { class: 'row' }, h('h2', { style: 'margin:0' }, title), (key === 'override_mihomo' ? s.core === 'mihomo' : st.isSb(s.core)) ? h('span', { class: 'badge acc' }, 'активно') : h('span', { class: 'badge' }, 'другое ядро'), h('span', { class: 'grow' }), status),
+    return h('div', { class: 'card' }, h('div', { class: 'row' }, h('h2', { style: 'margin:0' }, title), h('span', { class: 'badge acc' }, 'активно'), h('span', { class: 'grow' }), status),
       h('p', { class: 'small mute', style: 'margin:6px 0' }, hint), ta);
   }
 
@@ -112,7 +112,6 @@ export default async function (root) {
     h('div', { class: 'card' }, h('div', { class: 'row', style: 'margin-bottom:10px' }, h('h2', { style: 'margin:0' }, 'Сгенерированный конфиг'), h('span', { class: 'grow' }), btn),
       h('p', { class: 'small mute' }, 'Строится из текущих, в том числе несохранённых, настроек. Секреты показываются как есть — не публикуйте конфиг.'), out),
     overrideEditor('override_singbox', 'Расширенные добавки: sing-box / amnezia-box', 'JSON-объект, который глубоко сливается с итоговым конфигом sing-box (объекты объединяются, списки и значения заменяются). Позволяет использовать возможности, для которых нет полей в панели.'),
-    overrideEditor('override_mihomo', 'Расширенные добавки: Mihomo', 'JSON-объект, который глубоко сливается с итоговым YAML Mihomo. Например: {"tun": {"device": "utun0"}}.'),
     h('div', { class: 'card' }, h('h2', 'Импорт и экспорт настроек'),
       h('p', { class: 'small mute' }, 'Файл содержит все настройки, включая пароли и ключи узлов, — храните его в безопасном месте.'),
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => download('settings.json', JSON.stringify(s, null, 2)) }, 'Скачать settings.json'), fileIn)));

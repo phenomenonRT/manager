@@ -410,7 +410,7 @@ type coreInfo struct {
 func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 	set := s.St.Get()
 	cores := map[string]coreInfo{}
-	for _, c := range []string{model.CoreMihomo, model.CoreAmnezia} {
+	for _, c := range []string{model.CoreAmnezia} {
 		ci := coreInfo{}
 		if p := s.Inst.Locate(c, set.Download); p != "" {
 			ci.Installed, ci.Path = true, p
@@ -422,12 +422,12 @@ func (s *Server) system(w http.ResponseWriter, r *http.Request) {
 	}
 	binDir := s.Inst.BinDir(set.Download)
 	installed := map[string]int{}
-	for _, c := range []string{model.CoreMihomo, model.CoreAmnezia} {
+	for _, c := range []string{model.CoreAmnezia} {
 		installed[c] = s.Inst.InstalledMB(c, set.Download)
 	}
 	ok(w, map[string]any{"panel_version": s.Version, "platform": s.Info, "cores": cores,
 		"listen":  s.St.PanelInfo().Listen,
-		"storage": map[string]any{"dir": binDir, "free_mb": platform.FreeMB(binDir), "need_mb": map[string]int{model.CoreMihomo: installer.NeedMB[model.CoreMihomo], model.CoreAmnezia: installer.NeedMB[model.CoreAmnezia]}, "installed_mb": installed}})
+		"storage": map[string]any{"dir": binDir, "free_mb": platform.FreeMB(binDir), "need_mb": map[string]int{model.CoreAmnezia: installer.NeedMB[model.CoreAmnezia]}, "installed_mb": installed}})
 }
 
 func (s *Server) interfaces(w http.ResponseWriter, r *http.Request) {
@@ -550,10 +550,6 @@ func (s *Server) svc(action string) http.HandlerFunc {
 func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Core, Version, Source string }
 	if !decode(w, r, &in) {
-		return
-	}
-	if in.Core == model.CoreMihomo {
-		fail(w, 403, "Установка Mihomo заблокирована")
 		return
 	}
 	if in.Core != model.CoreAmnezia {

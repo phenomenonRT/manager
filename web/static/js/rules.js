@@ -20,7 +20,7 @@ const TIPS = {
   geoip: 'Коды стран или категорий из базы geoip (ru, cn, telegram…). Наборы скачаются автоматически.',
   rule_set: 'Имена наборов из раздела «Наборы правил» ниже.',
   port_range: 'Формат 1000-2000, по одному диапазону в строке.',
-  protocol: 'Работает только в sing-box и только при включённом sniff. В Mihomo правило будет пропущено.',
+  protocol: 'Работает только при включённом sniff.',
 };
 
 export function ruleEditor({ rules, outs, dns = false, defaultOut }) {

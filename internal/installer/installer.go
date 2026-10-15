@@ -1,4 +1,4 @@
-// Package installer скачивает и устанавливает ядра sing-box и Mihomo с GitHub Releases.
+// Package installer скачивает и устанавливает ядро (amnezia-box, а также sing-box) с GitHub Releases.
 package installer
 
 import (
@@ -30,13 +30,12 @@ import (
 // Repo — репозиторий релизов ядра.
 var Repo = map[string]string{
 	model.CoreSingbox: "SagerNet/sing-box",
-	model.CoreMihomo:  "MetaCubeX/mihomo",
 	model.CoreAmnezia: "phenomenonRT/amnezia-box",
 }
 
 // NeedMB — сколько места занимает распакованное ядро (оценка, МБ). Панель блокирует
 // установку с GitHub, если свободного места меньше.
-var NeedMB = map[string]int{model.CoreSingbox: 50, model.CoreMihomo: 35, model.CoreAmnezia: 15}
+var NeedMB = map[string]int{model.CoreSingbox: 50, model.CoreAmnezia: 15}
 
 // InstalledMB — размер уже скачанной панелью копии ядра в каталоге установки (МБ): при обновлении это место освободится.
 func (in *Installer) InstalledMB(core string, d model.Download) int {
@@ -49,8 +48,6 @@ func (in *Installer) InstalledMB(core string, d model.Download) int {
 // BinName — имя исполняемого файла.
 func BinName(core string) string {
 	switch core {
-	case model.CoreMihomo:
-		return "mihomo"
 	case model.CoreAmnezia:
 		return "amnezia-box"
 	}
@@ -79,25 +76,11 @@ var variants = map[string]map[string][]string{
 		"mipsle": {"mipsel", "mipsel-plain"},
 		"mips":   {"mips", "mips-plain"},
 	},
-	model.CoreMihomo: {
-		"amd64":    {"amd64", "amd64-compatible", "amd64-v1"},
-		"arm64":    {"arm64"},
-		"armv7":    {"armv7"},
-		"armv6":    {"armv6", "armv5"},
-		"armv5":    {"armv5"},
-		"386":      {"386", "386-softfloat"},
-		"mips64":   {"mips64"},
-		"mips64le": {"mips64le"},
-		"mipsle":   {"mipsle-softfloat", "mipsle-hardfloat"},
-		"mips":     {"mips-softfloat", "mips-hardfloat"},
-		"riscv64":  {"riscv64"},
-	},
 }
 
 var (
 	reSingbox = regexp.MustCompile(`^sing-box-[0-9][^/]*?-linux-(.+)\.tar\.gz$`)
 	reAmnezia = regexp.MustCompile(`^amnezia-box-linux-([a-z0-9]+(?:-plain)?)$`)
-	reMihomo  = regexp.MustCompile(`^mihomo-linux-(.+?)-(?:v[0-9]+\.[0-9]+\.[0-9]+|alpha-[0-9a-f]+).*\.gz$`)
 )
 
 func assetVariant(core, name string) (string, bool) {
@@ -106,11 +89,6 @@ func assetVariant(core, name string) (string, bool) {
 		m = reAmnezia.FindStringSubmatch(name)
 	} else if core == model.CoreSingbox {
 		m = reSingbox.FindStringSubmatch(name)
-	} else {
-		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".zip") {
-			return "", false
-		}
-		m = reMihomo.FindStringSubmatch(name)
 	}
 	if m == nil {
 		return "", false
@@ -214,10 +192,7 @@ func (in *Installer) BinDir(d model.Download) string {
 // Locate ищет бинарник ядра: свой путь → каталог установки → PATH.
 func (in *Installer) Locate(core string, d model.Download) string {
 	custom := d.SingboxPath
-	switch core {
-	case model.CoreMihomo:
-		custom = d.MihomoPath
-	case model.CoreAmnezia:
+	if core == model.CoreAmnezia {
 		custom = d.AmneziaPath
 	}
 	if custom != "" && isExec(custom) {
@@ -242,9 +217,6 @@ var reVer = regexp.MustCompile(`v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.\-+]*)`)
 // Version запрашивает версию у бинарника.
 func Version(ctx context.Context, core, bin string) (string, error) {
 	arg := "version"
-	if core == model.CoreMihomo {
-		arg = "-v"
-	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, arg).CombinedOutput()
@@ -342,9 +314,6 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 	api := "https://api.github.com/repos/" + repo + "/releases/latest"
 	if version != "" {
 		tag := version
-		if core == model.CoreMihomo && !strings.HasPrefix(tag, "v") {
-			tag = "v" + tag
-		}
 		if core == model.CoreSingbox && !strings.HasPrefix(tag, "v") {
 			tag = "v" + tag
 		}
@@ -392,10 +361,8 @@ func (in *Installer) resolve(ctx context.Context, c *http.Client, d model.Downlo
 		var name string
 		if core == model.CoreAmnezia {
 			name = "amnezia-box-linux-" + v
-		} else if core == model.CoreSingbox {
-			name = fmt.Sprintf("sing-box-%s-linux-%s.tar.gz", ver, v)
 		} else {
-			name = fmt.Sprintf("mihomo-linux-%s-%s.gz", v, tag)
+			name = fmt.Sprintf("sing-box-%s-linux-%s.tar.gz", ver, v)
 		}
 		u := withMirror(d, fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, tag, name))
 		req, _ := http.NewRequestWithContext(ctx, "HEAD", u, nil)
@@ -432,7 +399,7 @@ func (in *Installer) StartPackage(core string) error {
 }
 
 func (in *Installer) run(core string, f func(ctx context.Context) (string, error)) error {
-	if core != model.CoreSingbox && core != model.CoreMihomo && core != model.CoreAmnezia {
+	if core != model.CoreSingbox && core != model.CoreAmnezia {
 		return fmt.Errorf("неизвестное ядро «%s»", core)
 	}
 	in.mu.Lock()
@@ -646,7 +613,7 @@ func (p *progressWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// fetchExtract качает архив и пишет распакованный бинарник в dst (sing-box: tar.gz, Mihomo: gz).
+// fetchExtract качает архив и пишет распакованный бинарник в dst (sing-box: tar.gz, amnezia-box: готовый бинарник).
 func (in *Installer) fetchExtract(ctx context.Context, c *http.Client, tg target, core, dst string) error {
 	req, _ := http.NewRequestWithContext(ctx, "GET", tg.URL, nil)
 	req.Header.Set("User-Agent", "corepanel")
@@ -729,7 +696,6 @@ func writeRaw(src io.Reader, dst string) error {
 // PackageNames — имена пакетов ядер в репозиториях OpenWrt и Entware (пробуются по порядку).
 var PackageNames = map[string][]string{
 	model.CoreSingbox: {"sing-box", "sing-box-go"},
-	model.CoreMihomo:  {"mihomo", "clash-meta"},
 }
 
 func pkgCommands() (update, install []string, err error) {
@@ -794,7 +760,7 @@ func (in *Installer) installPackage(ctx context.Context, core string) (string, e
 // Remove удаляет ядро, установленное панелью (каталог установки) и, если оно поставлено
 // пакетом системы, сам пакет. Свой бинарник из настроек не трогается.
 func (in *Installer) Remove(ctx context.Context, core string, d model.Download) (string, error) {
-	if core != model.CoreSingbox && core != model.CoreMihomo && core != model.CoreAmnezia {
+	if core != model.CoreSingbox && core != model.CoreAmnezia {
 		return "", fmt.Errorf("неизвестное ядро «%s»", core)
 	}
 	if in.Job.Snapshot().Running {
@@ -829,10 +795,7 @@ func (in *Installer) Remove(ctx context.Context, core string, d model.Download) 
 		}
 	}
 	custom := d.SingboxPath
-	switch core {
-	case model.CoreMihomo:
-		custom = d.MihomoPath
-	case model.CoreAmnezia:
+	if core == model.CoreAmnezia {
 		custom = d.AmneziaPath
 	}
 	if len(done) == 0 {

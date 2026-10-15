@@ -154,54 +154,6 @@ func TestSingboxOverrideMerge(t *testing.T) {
 	}
 }
 
-func TestMihomoYAML(t *testing.T) {
-	res, err := Mihomo(sample())
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := res.Config
-	for _, want := range []string{
-		"mixed-port: 7890", "redir-port: 7892", "proxy-groups:", "rule-providers:",
-		`type: "vless"`, `reality-opts:`, `public-key: "PUB"`, `type: "hysteria2"`, `up: "50 Mbps"`,
-		`type: "wireguard"`, `type: "ss"`, `type: "url-test"`, `type: "fallback"`,
-		`"MATCH,proxy"`, `"RULE-SET,geoip-ru,DIRECT,no-resolve"`, `"RULE-SET,geosite-category-ads-all,REJECT"`,
-		`"DOMAIN-SUFFIX,youtube.com,proxy"`, `"DST-PORT,22,DIRECT"`, `enhanced-mode: "normal"`,
-		`"+.ru": "77.88.8.8"`, `behavior: "ipcidr"`, `format: "mrs"`,
-	} {
-		if !strings.Contains(c, want) {
-			t.Errorf("в YAML нет %q", want)
-		}
-	}
-	if strings.Contains(c, "IP-CIDR-CIDR") {
-		t.Error("неверный тип правила IP-CIDR")
-	}
-	if !containsWarn(res.Warnings, "sniffed") {
-		t.Errorf("нет предупреждения про protocol: %v", res.Warnings)
-	}
-	if !strings.Contains(c, `"IP-CIDR6,fc00::/7,DIRECT,no-resolve"`) {
-		t.Error("нет IPv6-правил для локальных сетей")
-	}
-}
-
-func TestMihomoWireGuard(t *testing.T) {
-	res, _ := Mihomo(sample())
-	if !strings.Contains(res.Config, `ip: "10.8.0.2"`) || !strings.Contains(res.Config, "reserved:") {
-		t.Error("поля WireGuard выведены неверно")
-	}
-}
-
-func TestYAMLEmitter(t *testing.T) {
-	o := NewO().Set("a", 1).Set("list", []any{
-		NewO().Set("name", "x").Set("opts", NewO().Set("k", "v")),
-		"plain",
-	}).Set("empty", []string{}).Set("yes", true).Set("+.example.com", "x")
-	got := YAML(o)
-	want := "a: 1\nlist:\n  - name: \"x\"\n    opts:\n      k: \"v\"\n  - \"plain\"\nempty: []\n\"yes\": true\n\"+.example.com\": \"x\"\n"
-	if got != want {
-		t.Errorf("YAML:\n%s\nожидалось:\n%s", got, want)
-	}
-}
-
 func TestParseDNSAddr(t *testing.T) {
 	cases := map[string]dnsAddr{
 		"77.88.8.8":                 {Type: "udp", Host: "77.88.8.8", Scheme: "udp"},
@@ -344,9 +296,6 @@ func TestLogNone(t *testing.T) {
 	c := string(res.Config)
 	if !strings.Contains(c, `"disabled": true`) || strings.Contains(c, `"timestamp"`) {
 		t.Errorf("sing-box: журнал не отключён: %s", c)
-	}
-	if mhLogLevel("none") != "silent" {
-		t.Errorf("mihomo: ожидался silent")
 	}
 	s.General.LogLevel = "warn"
 	res, _ = Singbox(s)
@@ -526,9 +475,6 @@ func TestLocalDNSDetour(t *testing.T) {
 		if _, ok := r["domain"]; ok && r["server"] == "local" {
 			t.Fatal("имена узлов не должны идти через Local, который сам ходит через узел")
 		}
-	}
-	if mh, err := Mihomo(s); err != nil || !strings.Contains(mh.Config, "#"+s.Nodes[0].Name) {
-		t.Fatalf("mihomo: %v", err)
 	}
 }
 

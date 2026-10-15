@@ -18,31 +18,6 @@ import (
 	"corepanel/internal/platform"
 )
 
-func TestPickAssetMihomo(t *testing.T) {
-	names := []string{
-		"mihomo-linux-amd64-v3-v1.19.0.gz", "mihomo-linux-amd64-compatible-v1.19.0.gz", "mihomo-linux-amd64-v1.19.0.gz",
-		"mihomo-linux-arm64-v1.19.0.gz", "mihomo-linux-armv7-v1.19.0.gz", "mihomo-linux-armv5-v1.19.0.gz",
-		"mihomo-linux-mipsle-softfloat-v1.19.0.gz", "mihomo-linux-mipsle-hardfloat-v1.19.0.gz",
-		"mihomo-linux-mips-softfloat-v1.19.0.gz", "mihomo-linux-amd64-v1.19.0.deb",
-		"mihomo-windows-amd64-v1.19.0.zip", "mihomo-linux-386-v1.19.0.gz",
-	}
-	cases := map[string]string{
-		"amd64":  "mihomo-linux-amd64-v1.19.0.gz",
-		"arm64":  "mihomo-linux-arm64-v1.19.0.gz",
-		"armv7":  "mihomo-linux-armv7-v1.19.0.gz",
-		"armv6":  "mihomo-linux-armv5-v1.19.0.gz",
-		"mipsle": "mihomo-linux-mipsle-softfloat-v1.19.0.gz",
-		"mips":   "mihomo-linux-mips-softfloat-v1.19.0.gz",
-		"386":    "mihomo-linux-386-v1.19.0.gz",
-	}
-	for arch, want := range cases {
-		got, err := PickAsset("mihomo", arch, names)
-		if err != nil || got != want {
-			t.Errorf("%s: %q, %v (ожидалось %q)", arch, got, err, want)
-		}
-	}
-}
-
 func TestPickAssetSingbox(t *testing.T) {
 	names := []string{
 		"sing-box-1.12.0-linux-amd64.tar.gz", "sing-box-1.12.0-linux-amd64v3.tar.gz",
@@ -73,7 +48,7 @@ func TestPickAssetSingbox(t *testing.T) {
 func TestStartDoesNotCrash(t *testing.T) {
 	in := New(platform.Info{Arch: "amd64", BinDir: t.TempDir()})
 	d := model.Download{Proxy: "http://127.0.0.1:1"} // недоступный прокси — ошибка быстро
-	if err := in.Start(model.CoreMihomo, "", d); err != nil {
+	if err := in.Start(model.CoreAmnezia, "", d); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 300; i++ {
@@ -81,7 +56,7 @@ func TestStartDoesNotCrash(t *testing.T) {
 			if s.Error == "" {
 				t.Fatal("ожидалась ошибка загрузки")
 			}
-			if err := in.Start(model.CoreMihomo, "", d); err != nil { // повторный запуск после завершения
+			if err := in.Start(model.CoreAmnezia, "", d); err != nil { // повторный запуск после завершения
 				t.Fatal(err)
 			}
 			return
@@ -111,18 +86,10 @@ func gz(t *testing.T, b []byte) []byte {
 func TestFetchExtractStream(t *testing.T) {
 	payload := bytes.Repeat([]byte("ELF-bin"), 50000)
 
-	// Mihomo: просто gzip
 	srv := serveArchive(t, "m.gz", gz(t, payload))
 	defer srv.Close()
 	in := New(platform.Info{Arch: "amd64"})
 	dir := t.TempDir()
-	dst := filepath.Join(dir, "mihomo.new")
-	if err := in.fetchExtract(context.Background(), srv.Client(), target{URL: srv.URL}, model.CoreMihomo, dst); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(dst); !bytes.Equal(b, payload) {
-		t.Fatal("содержимое mihomo не совпало")
-	}
 
 	// sing-box: tar.gz, нужный файл внутри подкаталога
 	var tb bytes.Buffer
@@ -149,7 +116,7 @@ func TestFetchExtractStream(t *testing.T) {
 	full := gz(t, payload)
 	srv3 := serveArchive(t, "cut.gz", full[:len(full)/2])
 	defer srv3.Close()
-	if err := in.fetchExtract(context.Background(), srv3.Client(), target{URL: srv3.URL}, model.CoreMihomo, filepath.Join(dir, "cut")); err == nil {
+	if err := in.fetchExtract(context.Background(), srv3.Client(), target{URL: srv3.URL}, model.CoreSingbox, filepath.Join(dir, "cut")); err == nil {
 		t.Fatal("ожидалась ошибка для обрезанного архива")
 	}
 }
@@ -209,17 +176,17 @@ func TestRemove(t *testing.T) {
 	dir := t.TempDir()
 	in := New(platform.Info{OS: "linux", Arch: "amd64", BinDir: dir})
 	d := model.Download{}
-	if _, err := in.Remove(context.Background(), model.CoreMihomo, d); err == nil {
+	if _, err := in.Remove(context.Background(), model.CoreAmnezia, d); err == nil {
 		t.Fatal("удаление несуществующего ядра должно давать ошибку")
 	}
-	for _, n := range []string{"mihomo", "mihomo.new"} {
+	for _, n := range []string{"amnezia-box", "amnezia-box.new"} {
 		os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o755)
 	}
-	what, err := in.Remove(context.Background(), model.CoreMihomo, d)
-	if err != nil || !strings.Contains(what, "mihomo") {
+	what, err := in.Remove(context.Background(), model.CoreAmnezia, d)
+	if err != nil || !strings.Contains(what, "amnezia-box") {
 		t.Fatalf("%q %v", what, err)
 	}
-	if m, _ := filepath.Glob(filepath.Join(dir, "mihomo*")); len(m) != 0 {
+	if m, _ := filepath.Glob(filepath.Join(dir, "amnezia-box*")); len(m) != 0 {
 		t.Fatalf("остались файлы: %v", m)
 	}
 }

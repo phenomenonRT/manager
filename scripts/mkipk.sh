@@ -56,7 +56,7 @@ Priority: optional
 Maintainer: corepanel
 Architecture: all
 Installed-Size: $size
-Description: Web panel for sing-box and Mihomo (binary for $arch)
+Description: Web panel for amnezia-box (binary for $arch)
 EOS
   # libc нужен только как формальность для opkg; на статическом бинарнике не влияет
   sed -i '/^Depends:/d' "$w/control/control"

@@ -3,16 +3,13 @@ package gen
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"reflect"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 )
 
 // O — словарь с сохранением порядка ключей. Из него одинаково собираются
-// и JSON (sing-box), и YAML (Mihomo), поэтому генераторы пишутся один раз.
+// и сохраняет порядок полей в JSON.
 type O struct {
 	keys []string
 	vals map[string]any
@@ -193,138 +190,4 @@ func toAnySlice(v any) []any {
 		out[i] = rv.Index(i).Interface()
 	}
 	return out
-}
-
-// ---------- YAML ----------
-
-var plainKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
-var yamlWords = map[string]bool{"y": true, "n": true, "yes": true, "no": true, "true": true, "false": true, "on": true, "off": true, "null": true}
-
-func yamlKey(k string) string {
-	if plainKey.MatchString(k) && !yamlWords[strings.ToLower(k)] {
-		return k
-	}
-	return yamlString(k)
-}
-
-func yamlString(s string) string {
-	b, _ := marshalNoEscape(s)
-	return string(b)
-}
-
-// YAML сериализует значение в YAML (двойные кавычки для всех строк — это безопасно для любых данных).
-func YAML(v any) string {
-	var b strings.Builder
-	writeYAML(&b, v, 0)
-	return b.String()
-}
-
-func isScalar(v any) bool {
-	switch t := v.(type) {
-	case nil, string, bool, int, int8, int16, int32, int64, uint, uint16, uint32, uint64, float32, float64:
-		return true
-	case *O:
-		return false
-	default:
-		_ = t
-		rk := reflect.ValueOf(v).Kind()
-		return rk != reflect.Slice && rk != reflect.Map && rk != reflect.Array
-	}
-}
-
-func scalar(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "null"
-	case string:
-		return yamlString(t)
-	case bool:
-		return strconv.FormatBool(t)
-	case float64:
-		if t == float64(int64(t)) {
-			return strconv.FormatInt(int64(t), 10)
-		}
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	default:
-		return fmt.Sprint(t)
-	}
-}
-
-func isEmptyContainer(v any) (string, bool) {
-	switch t := v.(type) {
-	case *O:
-		if len(t.keys) == 0 {
-			return "{}", true
-		}
-	default:
-		rv := reflect.ValueOf(v)
-		if (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Map) && rv.Len() == 0 {
-			if rv.Kind() == reflect.Map {
-				return "{}", true
-			}
-			return "[]", true
-		}
-	}
-	return "", false
-}
-
-func asMap(v any) (*O, bool) {
-	switch t := v.(type) {
-	case *O:
-		return t, true
-	case map[string]any:
-		n := NewO()
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			n.Set(k, t[k])
-		}
-		return n, true
-	}
-	return nil, false
-}
-
-func writeYAML(b *strings.Builder, v any, indent int) {
-	pad := strings.Repeat(" ", indent)
-	if m, ok := asMap(v); ok {
-		for _, k := range m.keys {
-			val := m.vals[k]
-			if e, ok := isEmptyContainer(val); ok {
-				fmt.Fprintf(b, "%s%s: %s\n", pad, yamlKey(k), e)
-				continue
-			}
-			if isScalar(val) {
-				fmt.Fprintf(b, "%s%s: %s\n", pad, yamlKey(k), scalar(val))
-				continue
-			}
-			fmt.Fprintf(b, "%s%s:\n", pad, yamlKey(k))
-			writeYAML(b, val, indent+2)
-		}
-		return
-	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
-		for i := 0; i < rv.Len(); i++ {
-			item := rv.Index(i).Interface()
-			if isScalar(item) {
-				fmt.Fprintf(b, "%s- %s\n", pad, scalar(item))
-				continue
-			}
-			if e, ok := isEmptyContainer(item); ok {
-				fmt.Fprintf(b, "%s- %s\n", pad, e)
-				continue
-			}
-			var sub strings.Builder
-			writeYAML(&sub, item, indent+2)
-			s := sub.String()
-			// первая строка вложенного блока получает маркер «- » вместо отступа
-			s = pad + "- " + strings.TrimPrefix(s, strings.Repeat(" ", indent+2))
-			b.WriteString(s)
-		}
-		return
-	}
-	fmt.Fprintf(b, "%s%s\n", pad, scalar(v))
 }

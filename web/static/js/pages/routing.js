@@ -5,7 +5,6 @@ import { transparentNote } from '../transparent.js';
 
 const S = st.S;
 const SB = 'https://raw.githubusercontent.com/SagerNet/';
-const MC = 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/';
 // [подпись, тип, имя]
 const PRESETS = [
   ['Реклама', 'geosite', 'category-ads-all'], ['Россия (домены)', 'geosite', 'category-ru'], ['Россия (IP)', 'geoip', 'ru'],
@@ -14,7 +13,6 @@ const PRESETS = [
   ['Discord', 'geosite', 'discord'], ['GitHub', 'geosite', 'github'], ['Twitter / X', 'geosite', 'twitter'], ['Китай (IP)', 'geoip', 'cn'],
 ];
 function presetURL(core, kind, name) {
-  if (core === 'mihomo') return MC + kind + '/' + name + '.mrs';
   return SB + (kind === 'geosite' ? 'sing-geosite/rule-set/geosite-' : 'sing-geoip/rule-set/geoip-') + name + '.srs';
 }
 // быстрые шаблоны правил: [подпись, тип, значения, куда]

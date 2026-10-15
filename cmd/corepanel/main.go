@@ -1,4 +1,4 @@
-// corepanel — веб-панель настройки sing-box и Mihomo для роутеров OpenWrt и Keenetic.
+// corepanel — веб-панель настройки amnezia-box для роутеров OpenWrt и Keenetic.
 package main
 
 import (
@@ -23,7 +23,7 @@ import (
 
 var version = "dev"
 
-const usage = `corepanel %s — панель sing-box / Mihomo для OpenWrt и Keenetic
+const usage = `corepanel %s — панель amnezia-box для OpenWrt и Keenetic
 
 Использование:
   corepanel [run] [-listen host:port]   запустить панель (по умолчанию)

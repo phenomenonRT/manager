@@ -71,7 +71,7 @@ func TestAuthAndSettings(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &set); err != nil {
 		t.Fatal(err)
 	}
-	set["core"] = "mihomo" // будет заменено на amnezia: Mihomo заблокирован
+	set["core"] = "mihomo" // старое значение заменяется на amnezia
 	b, _ := json.Marshal(set)
 	if r, out := do(t, c, "PUT", ts.URL+"/api/settings", string(b)); r.StatusCode != 200 {
 		t.Fatalf("PUT settings: %d %s", r.StatusCode, out)
@@ -134,8 +134,8 @@ func TestCoreInstallBlocked(t *testing.T) {
 	ts, _ := newTest(t)
 	jar, _ := cookiejarNew()
 	c := &http.Client{Jar: jar}
-	if r, _ := do(t, c, "POST", ts.URL+"/api/core/install", `{"core":"mihomo"}`); r.StatusCode != 403 {
-		t.Fatalf("установка Mihomo должна быть заблокирована: %d", r.StatusCode)
+	if r, _ := do(t, c, "POST", ts.URL+"/api/core/install", `{"core":"mihomo"}`); r.StatusCode != 400 {
+		t.Fatalf("Mihomo убран из проекта: %d", r.StatusCode)
 	}
 	if r, _ := do(t, c, "POST", ts.URL+"/api/core/install", `{"core":"singbox"}`); r.StatusCode != 400 {
 		t.Fatalf("sing-box убран из проекта: %d", r.StatusCode)

@@ -246,7 +246,7 @@ func notes(in Info) []string {
 		n = append(n, "Не найдены ни nft, ни iptables: режимы redirect/tproxy недоступны, используйте TUN.")
 	}
 	if in.MemTotalMB > 0 && in.MemTotalMB < 128 {
-		n = append(n, "Мало оперативной памяти (<128 МБ): Mihomo и sing-box будут работать, но избегайте больших наборов правил и режима fakeip с большим числом клиентов.")
+		n = append(n, "Мало оперативной памяти (<128 МБ): ядро будет работать, но избегайте больших наборов правил и режима fakeip с большим числом клиентов.")
 	}
 	switch in.OS {
 	case Keenetic:

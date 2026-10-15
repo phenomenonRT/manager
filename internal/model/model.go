@@ -1,5 +1,5 @@
 // Package model описывает единую модель настроек, из которой генерируются
-// конфигурации и для sing-box, и для Mihomo.
+// конфигурации amnezia-box (форк sing-box).
 package model
 
 import (
@@ -11,7 +11,6 @@ import (
 
 const (
 	CoreSingbox = "singbox"
-	CoreMihomo  = "mihomo"
 	CoreAmnezia = "amnezia" // amnezia-box: форк sing-box с AmneziaWG
 )
 
@@ -21,7 +20,7 @@ func IsSingbox(core string) bool { return core == CoreSingbox || core == CoreAmn
 // Settings — все пользовательские настройки панели.
 type Settings struct {
 	Version   int    `json:"version"`
-	Core      string `json:"core"`      // singbox | mihomo | amnezia
+	Core      string `json:"core"`      // amnezia (amnezia-box); singbox оставлен для чтения старых настроек
 	Autostart bool   `json:"autostart"` // запускать ядро вместе с панелью
 	Update    Update `json:"update"`
 
@@ -42,7 +41,6 @@ type Settings struct {
 	// Произвольные добавки к итоговому конфигу (глубокое слияние).
 	// Позволяют использовать любую возможность ядра, для которой нет полей в UI.
 	OverrideSingbox map[string]any `json:"override_singbox,omitempty"`
-	OverrideMihomo  map[string]any `json:"override_mihomo,omitempty"`
 }
 
 type General struct {
@@ -210,8 +208,7 @@ type Group struct {
 type RuleSet struct {
 	Name     string `json:"name"`
 	URL      string `json:"url"`
-	Format   string `json:"format"`             // srs json (sing-box) | mrs yaml text (mihomo)
-	Behavior string `json:"behavior,omitempty"` // mihomo: domain | ipcidr | classical
+	Format   string `json:"format"`             // srs | json | text (обычный список доменов)
 	Interval int    `json:"interval,omitempty"` // секунды
 }
 
@@ -245,7 +242,6 @@ type Download struct {
 	Mirror      string `json:"mirror"`       // префикс-зеркало GitHub, напр. https://ghfast.top/
 	Proxy       string `json:"proxy"`        // http(s)://host:port для загрузок
 	SingboxPath string `json:"singbox_path"` // свой бинарник
-	MihomoPath  string `json:"mihomo_path"`
 	AmneziaPath string `json:"amnezia_path"`
 	BinDir      string `json:"bin_dir"` // куда устанавливать ядра
 }
@@ -275,7 +271,7 @@ func Default() *Settings {
 // Normalize подставляет значения по умолчанию в пустые поля (после загрузки JSON).
 func (s *Settings) Normalize() {
 	d := Default()
-	if s.Core != CoreAmnezia { // sing-box убран из проекта, Mihomo заблокирован
+	if s.Core != CoreAmnezia { // другие ядра убраны из проекта
 		s.Core = d.Core
 	}
 	if s.General.LogLevel == "" {

@@ -4,10 +4,9 @@ import * as st from '../state.js';
 
 const S = st.S;
 const CORES = {
-  mihomo: { name: 'Mihomo', tag: 'Clash.Meta с богатыми группами', chips: ['fallback и load-balance', 'Clash-дашборды', 'fake-ip', 'правила .mrs'], pkg: true, blocked: true },
   amnezia: { name: 'amnezia-box', tag: 'sing-box с AmneziaWG: обход блокировок WireGuard', chips: ['всё из sing-box', 'AmneziaWG', 'сжатая сборка'], pkg: false },
 };
-const ORDER = ['mihomo', 'amnezia'];
+const ORDER = ['amnezia'];
 
 export default async function (root) {
   const s = S.settings;
@@ -18,7 +17,7 @@ export default async function (root) {
   let depT = 0;
   const jobBox = h('div');
   const latest = {}; // id -> ответ api/core/latest: есть ли версия новее установленной
-  apd(root, pageHead('Компоненты', 'Ядро amnezia-box: установка, обновление и удаление. Установка Mihomo заблокирована'),
+  apd(root, pageHead('Компоненты', 'Ядро amnezia-box: установка, обновление и удаление'),
     h('div', { class: 'bay' }, meterBox, coreRows, depBox), jobBox);
 
   // Хватает ли места под установку: свободное место + размер уже стоящей копии (она заменится).
@@ -77,7 +76,6 @@ export default async function (root) {
         h('div', { class: 'chips' }, c.chips.map((x) => h('span', x))),
         h('div', { class: 'mod-meta mono small' }, info.installed ? [h('span', 'v' + (info.version || '?').replace(/^v/, '')), h('span', info.path), lt && lt.latest && !lt.known ? h('span', 'на GitHub: v' + lt.latest) : null] : [h('span', 'нужно около ' + (sp.need || '?') + ' МБ')]),
         (lack && !blocked) ? note('warn', 'Не хватает места в ' + (sp.dir || 'каталоге установки') + ': свободно ' + sp.free + ' МБ, нужно около ' + sp.need + ' МБ. Скачанный файл при нехватке места удаляется. Подключите накопитель и укажите каталог установки ниже' + (c.pkg ? ' либо поставьте ядро «Из пакетов системы».' : '.')) : null,
-        blocked ? note('', 'Установка Mihomo заблокирована в этой сборке панели.') : null,
         h('div', { class: 'mod-act' }, btn, pkgBtn, info.installed ? delBtn : null)));
     }
   }
