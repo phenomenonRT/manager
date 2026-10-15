@@ -5,12 +5,30 @@ import { transparentNote } from '../transparent.js';
 
 const S = st.S;
 const SB = 'https://raw.githubusercontent.com/SagerNet/';
+const ID = 'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/';
 // [подпись, тип, имя]
 const PRESETS = [
   ['Реклама', 'geosite', 'category-ads-all'], ['Россия (домены)', 'geosite', 'category-ru'], ['Россия (IP)', 'geoip', 'ru'],
   ['Локальные (домены)', 'geosite', 'private'], ['Локальные (IP)', 'geoip', 'private'], ['Telegram (домены)', 'geosite', 'telegram'], ['Telegram (IP)', 'geoip', 'telegram'],
   ['YouTube', 'geosite', 'youtube'], ['Google', 'geosite', 'google'], ['Netflix', 'geosite', 'netflix'], ['OpenAI', 'geosite', 'openai'],
   ['Discord', 'geosite', 'discord'], ['GitHub', 'geosite', 'github'], ['Twitter / X', 'geosite', 'twitter'], ['Китай (IP)', 'geoip', 'cn'],
+  // обычные текстовые списки itdoginfo/allow-domains: панель сама скачивает и обновляет их
+  ['itdoginfo: Россия inside (заблокированное в РФ)', 'list', 'itdog-russia-inside', ID + 'Russia/inside-raw.lst'],
+  ['itdoginfo: Россия outside (российское для зарубежья)', 'list', 'itdog-russia-outside', ID + 'Russia/outside-raw.lst'],
+  ['itdoginfo: Новости', 'list', 'itdog-news', ID + 'Categories/news.lst'],
+  ['itdoginfo: Геоблок', 'list', 'itdog-geoblock', ID + 'Categories/geoblock.lst'],
+  ['itdoginfo: Хостинги (Hetzner, OVH, DO, Cloudflare, AWS, Akamai)', 'list', 'itdog-hodca', ID + 'Categories/hodca.lst'],
+  ['itdoginfo: Discord', 'list', 'itdog-discord', ID + 'Services/discord.lst'],
+  ['itdoginfo: Meta', 'list', 'itdog-meta', ID + 'Services/meta.lst'],
+  ['itdoginfo: Telegram', 'list', 'itdog-telegram', ID + 'Services/telegram.lst'],
+  ['itdoginfo: TikTok', 'list', 'itdog-tiktok', ID + 'Services/tiktok.lst'],
+  ['itdoginfo: Twitter / X', 'list', 'itdog-twitter', ID + 'Services/twitter.lst'],
+  ['itdoginfo: YouTube', 'list', 'itdog-youtube', ID + 'Services/youtube.lst'],
+  ['itdoginfo: Подсети Cloudflare', 'list', 'itdog-ip-cloudflare', ID + 'Subnets/IPv4/cloudflare.lst'],
+  ['itdoginfo: Подсети Discord', 'list', 'itdog-ip-discord', ID + 'Subnets/IPv4/discord.lst'],
+  ['itdoginfo: Подсети Meta', 'list', 'itdog-ip-meta', ID + 'Subnets/IPv4/meta.lst'],
+  ['itdoginfo: Подсети Telegram', 'list', 'itdog-ip-telegram', ID + 'Subnets/IPv4/telegram.lst'],
+  ['itdoginfo: Подсети Twitter / X', 'list', 'itdog-ip-twitter', ID + 'Subnets/IPv4/twitter.lst'],
 ];
 function presetURL(core, kind, name) {
   return SB + (kind === 'geosite' ? 'sing-geosite/rule-set/geosite-' : 'sing-geoip/rule-set/geoip-') + name + '.srs';
@@ -92,10 +110,10 @@ export default async function (root) {
         h('select', { 'aria-label': 'Куда направить', style: 'width:auto', onchange: (e) => { presetSel.out = e.target.value; } },
           outs().filter((o) => o[0] !== undefined).map(([v, t]) => h('option', { value: v, selected: v === proxyOut() }, t))),
         h('button', { class: 'btn primary', onclick: () => {
-          const p = PRESETS[+presetSel.v || 0]; const name = p[1] + '-' + p[2];
+          const p = PRESETS[+presetSel.v || 0]; const isList = p[1] === 'list'; const name = isList ? p[2] : p[1] + '-' + p[2];
           if (s.rule_sets.some((r) => r.name === name)) { toast('Набор «' + name + '» уже есть', 'err'); return; }
           const out = presetSel.out || proxyOut();
-          s.rule_sets.push({ name, url: presetURL(core(), p[1], p[2]), format: 'srs', behavior: p[1] === 'geoip' ? 'ipcidr' : 'domain', interval: 86400 });
+          s.rule_sets.push(isList ? { name, url: p[3], format: 'text', interval: 86400 } : { name, url: presetURL(core(), p[1], p[2]), format: 'srs', behavior: p[1] === 'geoip' ? 'ipcidr' : 'domain', interval: 86400 });
           setRule(name, out); drawSets(); toast('Добавлен набор «' + p[0] + '» → ' + out, 'ok');
         } }, 'Добавить'),
         h('button', { class: 'btn', onclick: () => { s.rule_sets.push({ name: 'set-' + (s.rule_sets.length + 1), url: '', format: '', behavior: '', interval: 86400 }); st.touch(); drawSets(); } }, 'Свой набор по ссылке')),
