@@ -51,6 +51,12 @@ func Singbox(s *model.Settings) (*Result, error) {
 		root.Set("http_clients", []any{cl})
 	}
 	root.Set("route", sbRoute(s, p))
+	if s.Tun.Enabled && s.Tun.AutoRoute && s.Tun.StrictRoute && s.Tun.AutoRedirect {
+		// в sing-tun при auto_redirect набор ip-правил строится в «режиме меток» и сразу возвращается,
+		// блок strict_route (unreachable для семейства без адреса TUN) не выполняется
+		p.warn("strict_route вместе с auto_redirect на Linux не блокирует IPv6 и не защищает, пока ядро остановлено: " +
+			"правила TUN существуют только пока работает ядро. Если IPv6 не нужен, отключите его на роутере")
+	}
 
 	exp := NewO()
 	clash := NewO().Set("external_controller", s.General.Controller).Opt("secret", s.General.Secret).Opt("external_ui", s.General.ExternalUI)
