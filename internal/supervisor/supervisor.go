@@ -2,12 +2,10 @@
 package supervisor
 
 import (
-	"bufio"
 	"context"
 	"corepanel/internal/kmods"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,6 +112,8 @@ type Supervisor struct {
 	warnings  []string
 	version   string
 	getSet    func() *model.Settings
+	bin       string // путь к запущенному ядру (для передачи новой панели)
+	logFile   string // файл вывода ядра
 }
 
 // New создаёт супервизор. getSettings вызывается при автоперезапуске.
@@ -260,13 +260,22 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	}
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
+	// Вывод ядра идёт в файл, а не в канал: при обновлении панель заменяет себя (exec), канал бы закрылся,
+	// и ядро, оставшееся работать, упало бы на первой записи в лог.
+	lf, logFile, err := s.openCoreLog(set.Core)
+	if err != nil {
+		s.lastErr = err.Error()
+		return fmt.Errorf("не удалось открыть файл вывода ядра: %v", err)
+	}
+	cmd.Stdout, cmd.Stderr = lf, lf
+	err = cmd.Start()
+	lf.Close() // у ядра своя копия дескриптора
+	if err != nil {
 		s.lastErr = err.Error()
 		return fmt.Errorf("не удалось запустить %s: %v", bin, err)
 	}
 	s.cmd, s.done, s.core = cmd, make(chan struct{}), set.Core
+	s.bin, s.logFile = bin, logFile
 	s.startedAt, s.lastErr, s.fwErr, s.desired = time.Now(), "", "", true
 	s.warnings = res.Warnings
 	s.version, _ = installer.Version(context.Background(), set.Core, bin)
@@ -276,23 +285,13 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	s.waitNet = false
 	s.Logs.Add(fmt.Sprintf("[panel] запущен %s (pid %d), конфиг %s", filepath.Base(bin), cmd.Process.Pid, cfgPath))
 
-	var wg sync.WaitGroup
-	pump := func(r io.Reader) {
-		defer wg.Done()
-		sc := bufio.NewScanner(r)
-		sc.Buffer(make([]byte, 64*1024), 1<<20)
-		for sc.Scan() {
-			s.Logs.Add(stripANSI(sc.Text()))
-		}
-	}
-	wg.Add(2)
-	go pump(stdout)
-	go pump(stderr)
+	tl := newTailer(logFile, s.Logs, 0)
+	go tl.run()
 	done := s.done
 	go s.refreshRuleSets(set, dir, done)
 	go func() {
-		wg.Wait()
 		err := cmd.Wait()
+		tl.Stop()   // дочитать последние строки до сообщения об ошибке
 		close(done) // раньше onExit: Start держит блокировку, пока ждёт done
 		s.onExit(cmd, err)
 	}()
@@ -341,6 +340,10 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 			s.fw = sc
 			s.Logs.Add("[panel] правила прозрачного проксирования применены (" + sp.Mode + ", " + sp.Backend + ")")
 		}
+	}
+	// состояние нужно, чтобы новая панель (после обновления или аварийного перезапуска) подхватила ядро
+	if err := s.saveStateLocked(); err != nil {
+		s.Logs.Add("[panel] состояние ядра не сохранено: " + err.Error())
 	}
 	return nil
 }
@@ -393,6 +396,7 @@ func (s *Supervisor) onExit(cmd *exec.Cmd, err error) {
 		msg = fmt.Sprintf("ядро завершилось: %v", err)
 	}
 	s.Logs.Add("[panel] " + msg)
+	s.clearState()
 	if s.fw != nil {
 		firewall.Remove(context.Background(), s.fw)
 		s.fw = nil
@@ -473,6 +477,7 @@ func (s *Supervisor) Stop() error {
 	s.desired, s.waitNet = false, false
 	cmd, done, fw, ifw := s.cmd, s.done, s.fw, s.ifw
 	s.fw, s.ifw = nil, nil
+	s.clearState()
 	s.mu.Unlock()
 
 	if fw != nil {

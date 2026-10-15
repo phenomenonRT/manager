@@ -100,11 +100,15 @@ func run(args []string) {
 		if r, e := filepath.EvalSymlinks(exe); e == nil {
 			exe = r
 		}
-		// запомнить, что ядро работало, и вернуть его после перезапуска
-		if sup.Status().State == "running" {
-			_ = os.WriteFile(filepath.Join(info.DataDir, updater.ResumeMarker), []byte("1"), 0o600)
+		// Ядро не трогаем: пока оно работает, правила TUN/auto_redirect действуют, и трафик не идёт мимо
+		// туннеля. Новая панель подхватит его по файлу состояния (supervisor.Adopt).
+		// Если передать не удалось — по-старому: остановить и запустить заново после перезапуска.
+		if !sup.HandOver() {
+			if sup.Status().State == "running" {
+				_ = os.WriteFile(filepath.Join(info.DataDir, updater.ResumeMarker), []byte("1"), 0o600)
+			}
+			_ = sup.Stop()
 		}
-		_ = sup.Stop()
 		return updater.Reexec(exe)
 	}
 	go srv.Updater.AutoLoop(context.Background())
@@ -114,7 +118,8 @@ func run(args []string) {
 		resume = true
 		_ = os.Remove(filepath.Join(info.DataDir, updater.ResumeMarker))
 	}
-	if st.Get().Autostart || resume {
+	// ядро, пережившее перезапуск панели, подхватываем; второе запускать не нужно
+	if !sup.Adopt(st.Get()) && (st.Get().Autostart || resume) {
 		go func() {
 			if err := sup.Start(st.Get()); err != nil {
 				sup.Logs.Add("[panel] автозапуск не удался: " + err.Error())

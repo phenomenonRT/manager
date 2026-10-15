@@ -14,7 +14,11 @@ import (
 
 func fakeCore(t *testing.T, runBody string) (*Supervisor, *model.Settings) {
 	t.Helper()
-	dir := t.TempDir()
+	return fakeCoreIn(t, t.TempDir(), runBody)
+}
+
+func fakeCoreIn(t *testing.T, dir, runBody string) (*Supervisor, *model.Settings) {
+	t.Helper()
 	bin := filepath.Join(dir, "bin")
 	os.MkdirAll(bin, 0o755)
 	script := `#!/bin/sh
@@ -31,7 +35,7 @@ esac
 	set := model.Default()
 	set.Normalize()
 	sup := New(info, installer.New(info), func() *model.Settings { return set })
-	t.Cleanup(func() { sup.Stop() })
+	t.Cleanup(func() { sup.Stop(); os.Remove(sup.logPath(set.Core)) })
 	return sup, set
 }
 

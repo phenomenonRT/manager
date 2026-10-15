@@ -1,7 +1,7 @@
 // Package updater — проверка и установка новых версий самой панели с GitHub Releases
 // (https://github.com/phenomenonRT/panel_awg-box_sing-box/releases). Берётся готовый бинарник
 // corepanel-linux-<arch>, проверяется по SHA256SUMS.txt и подменяет текущий файл; затем
-// панель перезапускает сама себя (exec), остановив ядро и вернув его после запуска.
+// панель перезапускает сама себя (exec); работающее ядро не трогается и подхватывается новым процессом.
 package updater
 
 import (
@@ -30,7 +30,8 @@ import (
 // latestURL — последний релиз (переопределяется в тестах).
 var latestURL = "https://api.github.com/repos/phenomenonRT/panel_awg-box_sing-box/releases/latest"
 
-// ResumeMarker — файл в каталоге данных: после обновления ядро нужно запустить снова.
+// ResumeMarker — файл в каталоге данных: запасной путь, когда передать работающее ядро не удалось
+// и оно было остановлено — после обновления его нужно запустить снова.
 const ResumeMarker = "resume-core"
 
 // Info — результат проверки.
@@ -62,7 +63,7 @@ type Updater struct {
 	Version  string
 	Info     platform.Info
 	Settings func() *model.Settings
-	// Restart останавливает ядро и перезапускает процесс панели; при успехе не возвращается.
+	// Restart перезапускает процесс панели (ядро передаётся новому процессу); при успехе не возвращается.
 	Restart func() error
 	// ExePath — путь к исполняемому файлу панели (в тестах подменяется).
 	ExePath func() (string, error)
