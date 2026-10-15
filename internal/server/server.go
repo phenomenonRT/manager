@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"corepanel/internal/dnstest"
 	"corepanel/internal/firewall"
 	"corepanel/internal/importer"
 	"corepanel/internal/installer"
@@ -157,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST", "keygen", s.keygen, true)
 	api("GET", "interfaces", s.interfaces, true)
 	api("GET", "dns/system", s.dnsSystem, true)
+	api("POST", "dns/test", s.dnsTest, true)
 	api("GET", "firewall/preview", s.fwPreview, true)
 	api("GET", "logs", s.logs, true)
 	api("GET", "logs/stream", s.logStream, true)
@@ -243,6 +245,18 @@ func fail(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// dnsTest проверяет DNS-сервер тестовым запросом с самого роутера.
+func (s *Server) dnsTest(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Addr, Bootstrap string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Bootstrap == "" {
+		in.Bootstrap = s.St.Get().DNS.Bootstrap
+	}
+	ok(w, dnstest.Test(r.Context(), in.Addr, in.Bootstrap))
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {

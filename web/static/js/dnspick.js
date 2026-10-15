@@ -1,7 +1,7 @@
 // Поле DNS-адреса с выпадающим списком: готовые DoH/DoT/DoQ-серверы, обычные DNS и DNS роутера.
 // Список только подсказывает — вводить можно любой адрес вручную.
 import { h, fire } from './ui.js';
-import { get } from './api.js';
+import { get, post } from './api.js';
 
 const DOH = [
   ['Cloudflare', 'https://1.1.1.1/dns-query'],
@@ -123,7 +123,7 @@ export function dnsPick(obj, key, kind, o = {}) {
   const input = h('input', {
     type: 'text', value: obj[key] ?? '', placeholder: o.ph, autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off',
     role: 'combobox', 'aria-autocomplete': 'list', 'aria-expanded': 'false', 'aria-controls': uid,
-    oninput: (e) => { obj[key] = e.target.value; typed = true; act = -1; show(); drawHint(); fire(o); },
+    oninput: (e) => { obj[key] = e.target.value; typed = true; act = -1; testSeq++; show(); drawHint(); fire(o); },
     onfocus: () => { typed = false; act = -1; show(); },
     onclick: () => { if (!open) { typed = false; show(); } },
     onkeydown: (e) => {
@@ -148,7 +148,24 @@ export function dnsPick(obj, key, kind, o = {}) {
     onmousedown: (e) => e.preventDefault(),
     onclick: (e) => { e.preventDefault(); if (open) hide(); else { input.focus(); typed = false; show(); } },
   }, '▾');
-  const wrap = h('div', { class: 'dp' }, h('div', { class: 'dp-in' }, input, toggle), list, hint);
+  const testBtn = h('button', { type: 'button', class: 'btn sm dp-test', title: 'Отправить тестовый запрос на этот сервер с роутера и показать время ответа', onclick: runTest }, 'Проверить');
+  const wrap = h('div', { class: 'dp' }, h('div', { class: 'dp-row' }, h('div', { class: 'dp-in' }, input, toggle), testBtn), list, hint);
+  let testSeq = 0;
+  async function runTest() {
+    const addr = (obj[key] ?? '').trim();
+    const seq = ++testSeq;
+    if (!addr) { drawHint(); return; }
+    testBtn.disabled = true; testBtn.textContent = 'Проверяю…';
+    hint.className = 'dp-hint small'; hint.textContent = 'Отправляю тестовый запрос на ' + addr + '…';
+    let r;
+    try { r = await post('api/dns/test', { addr, bootstrap: o.bootstrap ? o.bootstrap() : '' }); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+    if (seq !== testSeq) return;
+    testBtn.disabled = false; testBtn.textContent = 'Проверить';
+    hint.className = 'dp-hint small ' + (r.ok ? 'ok' : 'bad');
+    hint.textContent = r.ok
+      ? 'Отвечает: ' + r.ms + ' мс (' + r.proto + ')' + ((r.ips || []).length ? ', example.com → ' + r.ips[0] : '') + (r.ms > 1500 ? '. Медленно — возможно, провайдер замедляет этот сервер.' : '') + (kind === 'remote' ? '. Проверка идёт с роутера напрямую, через VPN ответ может отличаться.' : '')
+      : 'Не отвечает' + (r.proto ? ' (' + r.proto + ')' : '') + ': ' + (r.error || 'неизвестная ошибка');
+  }
 
   function groups() {
     const gs = KINDS[kind].map((k) => ({ title: G[k].title, items: G[k].items.map(([n, a]) => ({ name: n, addr: a, tag: G[k].tag })) }));

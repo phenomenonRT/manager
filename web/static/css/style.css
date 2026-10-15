@@ -305,3 +305,6 @@ main{min-width:0}
 .dnsblks{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:14px 0}
 .dnsblk{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
 .dnsblk-h{display:flex;flex-direction:column;margin-bottom:8px}
+.dp-row{display:flex;gap:8px;align-items:stretch}
+.dp-row .dp-in{flex:1;min-width:0}
+.dp-test{white-space:nowrap}
