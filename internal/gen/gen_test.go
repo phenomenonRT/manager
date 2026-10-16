@@ -250,8 +250,8 @@ func TestIfaceNode(t *testing.T) {
 	if !strings.Contains(string(res.Config), `"bind_interface": "sstp-vpn0"`) {
 		t.Errorf("нет bind_interface: %s", res.Config)
 	}
-	if !strings.Contains(string(res.Config), `"routing_mark": 512`) {
-		t.Errorf("нет routing_mark: %s", res.Config)
+	if strings.Contains(string(res.Config), "routing_mark") {
+		t.Errorf("метка у узла-интерфейса ломает TUN с auto_redirect, её быть не должно: %s", res.Config)
 	}
 	s.Nodes[0].BindInterface = ""
 	for _, i := range s.Validate() {

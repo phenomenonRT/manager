@@ -182,7 +182,7 @@ func TestNodeIfaceRoutes(t *testing.T) {
 	if sc == nil {
 		t.Fatal("nil")
 	}
-	for _, w := range []string{"ip route replace default dev sstp-vpn0 table 300", "ip rule add fwmark 512 lookup 300 pref 10200", "ip route replace default dev l2tp0 table 301", "ip rule add fwmark 513 lookup 301"} {
+	for _, w := range []string{"ip route replace default dev sstp-vpn0 table 300", "ip rule add oif sstp-vpn0 lookup 300 pref 10200", "ip route replace default dev l2tp0 table 301", "ip rule add oif l2tp0 lookup 301 pref 10201", "ip rule del pref 10200"} {
 		if !strings.Contains(sc.Up, w) {
 			t.Fatalf("нет %q:\n%s", w, sc.Up)
 		}

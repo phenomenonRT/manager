@@ -409,8 +409,8 @@ func IfaceRoutes(s *model.Settings) *Scripts {
 	return &Scripts{Up: up.String(), Down: tolerant(down.String())}
 }
 
-// NodeIfaceRoutes строит маршруты для узлов «Системный VPN (интерфейс)»: метка пакетов ядра → своя таблица →
-// default через интерфейс. Возвращает nil, если таких узлов нет.
+// NodeIfaceRoutes строит маршруты для узлов «Системный VPN (интерфейс)»: пакеты, привязанные к интерфейсу →
+// своя таблица → default через интерфейс (правило «oif», без меток). Возвращает nil, если таких узлов нет.
 func NodeIfaceRoutes(s *model.Settings) *Scripts {
 	var up, down, refresh strings.Builder
 	n := 0
@@ -420,13 +420,14 @@ func NodeIfaceRoutes(s *model.Settings) *Scripts {
 			continue
 		}
 		n++
-		mark, table, pref := model.IfaceNodeMarkBase+slot, model.IfaceNodeTableBase+slot, model.IfaceNodePrefBase+slot
+		table, pref := model.IfaceNodeTableBase+slot, model.IfaceNodePrefBase+slot
 		route := fmt.Sprintf("ip route replace default dev %s table %d 2>/dev/null || true\n", nd.BindInterface, table)
 		refresh.WriteString(route)
 		up.WriteString(route)
-		fmt.Fprintf(&up, "ip rule del fwmark %d lookup %d 2>/dev/null || true\n", mark, table)
-		fmt.Fprintf(&up, "ip rule add fwmark %d lookup %d pref %d\n", mark, table, pref)
-		fmt.Fprintf(&down, "ip rule del fwmark %d lookup %d\n", mark, table)
+		// по приоритету удаляем и правила старых версий панели (они были по метке)
+		fmt.Fprintf(&up, "while ip rule del pref %d 2>/dev/null; do :; done\n", pref)
+		fmt.Fprintf(&up, "ip rule add oif %s lookup %d pref %d\n", nd.BindInterface, table, pref)
+		fmt.Fprintf(&down, "while ip rule del pref %d 2>/dev/null; do :; done\n", pref)
 		fmt.Fprintf(&down, "ip route flush table %d\n", table)
 	}
 	if n == 0 {

@@ -458,11 +458,8 @@ func sbTransport(n model.Node) *O {
 func sbDial(o *O, s *model.Settings, n model.Node) {
 	o.Opt("detour", n.Detour)
 	o.Opt("bind_interface", n.BindInterface)
-	if n.Type == "iface" {
-		if slot := s.IfaceNodeSlot(n.Name); slot >= 0 {
-			o.Set("routing_mark", model.IfaceNodeMarkBase+slot)
-		}
-	}
+	// Метку (routing_mark) для узлов-интерфейсов не ставим: при TUN с автоперенаправлением ядро узнаёт свои
+	// пакеты по собственной метке, и чужая метка отправляет их обратно в ядро. Маршрут выбирает правило по интерфейсу.
 	o.Opt("tcp_fast_open", s.General.TCPFastOpen)
 }
 
