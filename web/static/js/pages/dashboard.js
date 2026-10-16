@@ -124,7 +124,7 @@ export default async function (root) {
     const groups = Object.entries(all).filter(([n, p]) => n !== 'GLOBAL' && Array.isArray(p.all));
     clear(ui.proxies).append(h('h2', 'Выбор узла'));
     if (!groups.length) { ui.proxies.append(h('div', { class: 'empty' }, 'Групп пока нет. Создайте их в разделе «Группы».')); return; }
-    if (diag) ui.proxies.append(note('warn', h('div', h('b', 'Что пишет ядро (последние ошибки):'), h('pre', { class: 'mono small', style: 'white-space:pre-wrap;word-break:break-word;margin:6px 0 0;max-height:200px;overflow:auto' }, diag.join('\n')))));
+    if (diag) ui.proxies.append(note('warn', h('div', h('b', diagTitle || 'Что пишет ядро (последние ошибки):'), h('pre', { class: 'mono small', style: 'white-space:pre-wrap;word-break:break-word;margin:6px 0 0;max-height:200px;overflow:auto' }, diag.join('\n')))));
     for (const [name, g] of groups) {
       const isSel = /^selector$/i.test(g.type);
       const chips = g.all.map((m) => {
@@ -145,7 +145,7 @@ export default async function (root) {
             await testDelay(m, (cfg && cfg.url) || TEST_URL);
             busy[m] = false;
             if (!alive) return;
-            if (delayErr[m]) { await loadDiag(); loadAwg(); }
+            if (delayErr[m]) { await loadDiag([m]); loadAwg(); }
             drawProxies(all);
           },
         }, hs ? h('i', { class: 'hs ' + (hs.kind || 'none'), 'aria-hidden': 'true' }) : null, m, h('small', lab));
@@ -163,7 +163,7 @@ export default async function (root) {
         const total = g.all.filter((m) => m !== 'block').length;
         if (bad.length && bad.length === total) {
           const errMsg = delayErr[bad[0]];
-          await loadDiag(); drawProxies(all);
+          await loadDiag(bad); drawProxies(all);
           const dnsFail = (diag || []).some((x) => /lookup failed|dns:.*(timeout|deadline)/i.test(x));
           const hsFail = (diag || []).some((x) => /handshake did not complete/i.test(x)) && !(diag || []).some((x) => /received handshake response/i.test(x));
           toast(hsFail
@@ -180,13 +180,32 @@ export default async function (root) {
   }
   const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return u; } };
   const delayErr = {};
+  let diagTitle = '';
   let diag = null; // выдержка из журнала ядра после неудачной проверки: показывает настоящую причину
-  async function loadDiag() {
+  // names — узлы, проверка которых не прошла: подсказка зависит от их типа (AWG, системный VPN-интерфейс и т. д.)
+  async function loadDiag(names) {
     try {
       const r = await get('api/logs?n=60');
       const ls = ((r && r.lines) || []).map((x) => (typeof x === 'string' ? x : x.text || x.line || JSON.stringify(x)));
       const hit = ls.filter((x) => /\b(ERROR|WARN|FATAL|PANIC)\b/.test(x) || /handshake|timeout|refused|unreachable|lookup failed|no route|no such device/i.test(x)).slice(-8);
-      diag = hit.length ? hit : ['В журнале ядра нет ошибок. Уровень логов «warn» не показывает рукопожатие AWG: поставьте info в «Входящие, TUN, сеть → Общие», перезапустите ядро и повторите проверку.'];
+      const nodes = (S.settings.nodes || []).filter((n) => (names || []).includes(n.name));
+      diagTitle = hit.length ? 'Что пишет ядро (последние ошибки):' : 'Подсказка:';
+      if (hit.length) { diag = hit; return; }
+      const hints = ['В журнале ядра нет ошибок — значит, ядро запрос отправило, а ответа не получило.'];
+      const ifn = nodes.filter((n) => n.type === 'iface' && n.bind_interface);
+      if (ifn.length) {
+        let list = [];
+        try { list = (await get('api/interfaces')) || []; } catch (e) { /* список необязателен */ }
+        for (const n of ifn) {
+          const i = list.find((x) => x.name === n.bind_interface);
+          hints.push(!i ? 'Интерфейс «' + n.bind_interface + '» (узел «' + n.name + '») не найден в системе: VPN не запущен или интерфейс называется иначе.'
+            : !i.up ? 'Интерфейс «' + n.bind_interface + '» (узел «' + n.name + '») не активен: запустите VPN на роутере.'
+            : 'Интерфейс «' + n.bind_interface + '» поднят' + ((i.addrs || []).length ? ' (' + i.addrs[0] + ')' : ' без IP-адреса') + ', но через него нет ответа. Проверьте сам VPN: с роутера выполните curl --interface ' + n.bind_interface + ' https://www.gstatic.com/generate_204 — если не отвечает и там, проблема в туннеле, а не в панели.');
+        }
+      } else if (nodes.some((n) => n.type === 'awg')) {
+        hints.push('Уровень логов «warn» не показывает рукопожатие AWG: поставьте info в «Входящие, TUN, сеть → Общие», перезапустите ядро и повторите проверку.');
+      }
+      diag = hints;
     } catch (e) { diag = null; }
   }
   async function testDelay(name, url) {
