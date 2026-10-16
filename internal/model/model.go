@@ -202,7 +202,17 @@ type Group struct {
 	URL       string   `json:"url,omitempty"`
 	Interval  int      `json:"interval,omitempty"` // секунды
 	Tolerance int      `json:"tolerance,omitempty"`
+	// Timeout — сколько ждать ответа при проверке задержки из панели, мс (0 = 10 с).
+	// В конфиг ядра не попадает: у urltest такого параметра нет, фоновая проверка ядра ждёт 15 с.
+	Timeout int `json:"timeout,omitempty"`
 }
+
+// Допустимый таймаут проверки задержки из панели, мс.
+const (
+	DelayTimeoutMin     = 1000
+	DelayTimeoutMax     = 60000
+	DelayTimeoutDefault = 10000
+)
 
 // RuleSet — удалённый набор правил.
 type RuleSet struct {
@@ -482,6 +492,9 @@ func (s *Settings) Validate() []Issue {
 	for _, g := range s.Groups {
 		if len(g.Members) == 0 {
 			add("error", "группа «%s» пуста", g.Name)
+		}
+		if g.Timeout != 0 && (g.Timeout < DelayTimeoutMin || g.Timeout > DelayTimeoutMax) {
+			add("error", "группа «%s»: таймаут проверки должен быть от %d до %d с", g.Name, DelayTimeoutMin/1000, DelayTimeoutMax/1000)
 		}
 		for _, m := range g.Members {
 			if !exists(m) {

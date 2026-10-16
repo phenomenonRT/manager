@@ -142,7 +142,7 @@ export default async function (root) {
             if (m === 'block') { drawProxies(all); return; }
             busy[m] = true; drawProxies(all);
             const cfg = (S.settings.groups || []).find((x) => x.name === name);
-            await testDelay(m, (cfg && cfg.url) || TEST_URL);
+            await testDelay(m, (cfg && cfg.url) || TEST_URL, cfg && cfg.timeout);
             busy[m] = false;
             if (!alive) return;
             if (delayErr[m]) { await loadDiag([m]); loadAwg(); }
@@ -155,7 +155,7 @@ export default async function (root) {
         const queue = g.all.filter((m) => m !== 'block'); // block не отвечает по определению
         const cfg = (S.settings.groups || []).find((x) => x.name === name);
         const url = (cfg && cfg.url) || TEST_URL;
-        const worker = async () => { while (queue.length && alive) { const m = queue.shift(); await testDelay(m, url); } };
+        const worker = async () => { while (queue.length && alive) { const m = queue.shift(); await testDelay(m, url, cfg && cfg.timeout); } };
         await Promise.all([worker(), worker(), worker(), worker()]);
         if (!alive) return;
         drawProxies(all);
@@ -170,7 +170,7 @@ export default async function (root) {
             ? 'Туннель AWG не поднялся: ядро отправляет рукопожатие, но сервер не отвечает. Это не DNS и не адрес проверки. Сверьте с сервером ключи (PrivateKey, PublicKey, PresharedKey), Jc/Jmin/Jmax, S1–S4, H1–H4 и I1–I5 — они должны совпадать до символа. Проверьте, что UDP-порт сервера доступен с роутера (провайдер часто режет нестандартные UDP) и что конфиг работает в официальном клиенте AmneziaWG.'
             : dnsFail
             ? 'Узлы не проверены: ядро не смогло определить адрес ' + hostOf(url) + ' (DNS не ответил за отведённое время). Это не обязательно сбой VPN. Выберите проверку «по IP» в «Группы → Параметры проверки» и посмотрите «DNS»: если трафик DNS идёт напрямую (Final = direct), DoH/DoT часто режутся провайдером. Задайте «Remote через» — группу.'
-            : 'Ни один узел не ответил на ' + url + ' за 10 с (' + errMsg + '). Проверьте адрес, ключи и параметры AWG узла, интерфейс WAN и «Интерфейс по умолчанию» (при TUN). Подробности — в блоке ниже и в «Логи».', 'err');
+            : 'Ни один узел не ответил на ' + url + ' за ' + Math.round(((cfg && cfg.timeout) || 10000) / 1000) + ' с (' + errMsg + '). Проверьте адрес, ключи и параметры AWG узла, интерфейс WAN и «Интерфейс по умолчанию» (при TUN). Подробности — в блоке ниже и в «Логи».', 'err');
         }
       } }, 'Проверить задержку');
       ui.proxies.append(h('div', { style: 'margin-bottom:12px' },
@@ -208,9 +208,10 @@ export default async function (root) {
       diag = hints;
     } catch (e) { diag = null; }
   }
-  async function testDelay(name, url) {
+  async function testDelay(name, url, timeout) {
+    const ms = Math.min(60000, Math.max(1000, Number(timeout) || 10000));
     try {
-      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=10000', { signal: ctl.signal });
+      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=' + ms, { signal: ctl.signal });
       delays[name] = (r && r.delay) || 0; delete delayErr[name];
     } catch (e) {
       delays[name] = 0;

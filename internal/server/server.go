@@ -754,7 +754,7 @@ var clashTransport = &http.Transport{
 	MaxIdleConns:          8,
 	MaxIdleConnsPerHost:   4,
 	IdleConnTimeout:       60 * time.Second,
-	ResponseHeaderTimeout: 25 * time.Second,
+	ResponseHeaderTimeout: 70 * time.Second, // проверка задержки может идти до model.DelayTimeoutMax
 }
 
 func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
@@ -770,7 +770,11 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort(host, port)}
 	secret := set.General.Secret
 	// Таймаут на весь запрос к ядру (включая проверку задержки узла)
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	limit := 30 * time.Second
+	if strings.HasSuffix(r.URL.Path, "/delay") {
+		limit = 75 * time.Second // таймаут проверки задаётся в запросе (до model.DelayTimeoutMax)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), limit)
 	defer cancel()
 	r = r.WithContext(ctx)
 	rp := &httputil.ReverseProxy{

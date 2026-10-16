@@ -344,6 +344,42 @@ func TestUrltestToleranceClamp(t *testing.T) {
 	}
 }
 
+// Таймаут проверки задержки — настройка панели: в конфиг ядра он попасть не должен (ядро не знает такого ключа),
+// а значения вне допустимого диапазона — ошибка настроек.
+func TestGroupTimeoutPanelOnly(t *testing.T) {
+	s := model.Default()
+	s.Nodes = []model.Node{{Name: "a", Type: "shadowsocks", Server: "1.1.1.1", Port: 1, Method: "aes-128-gcm", Password: "x"}}
+	s.Groups = []model.Group{{Name: "u", Type: "urltest", Members: []string{"a"}, Timeout: 20000}}
+	res, err := Singbox(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Config, "timeout") && strings.Contains(res.Config, "20000") {
+		t.Errorf("таймаут проверки попал в конфиг ядра: %s", res.Config)
+	}
+	hasTimeoutIssue := func() bool {
+		for _, is := range s.Validate() {
+			if strings.Contains(is.Message, "таймаут проверки") {
+				return true
+			}
+		}
+		return false
+	}
+	if hasTimeoutIssue() {
+		t.Error("20 с — допустимое значение")
+	}
+	for _, bad := range []int{500, 61000, -1} {
+		s.Groups[0].Timeout = bad
+		if !hasTimeoutIssue() {
+			t.Errorf("таймаут %d мс должен быть ошибкой", bad)
+		}
+	}
+	s.Groups[0].Timeout = 0
+	if hasTimeoutIssue() {
+		t.Error("0 — значение по умолчанию, ошибки быть не должно")
+	}
+}
+
 func TestAWG3Fields(t *testing.T) {
 	n := model.Node{Name: "a", Type: "awg", Server: "1.2.3.4", Port: 51305, PrivateKey: "K", PeerPublicKey: "P", Addresses: []string{"10.0.0.2/32"},
 		Keepalive: "25-27", AWG: &model.AWG{Jc: 5, HeaderProtectionKey: "HPK", RandomTrailers: true, RekeyTimeout: "5", ContentPadding: "11-94"}}
