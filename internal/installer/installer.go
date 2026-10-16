@@ -214,8 +214,43 @@ func isExec(p string) bool {
 
 var reVer = regexp.MustCompile(`v?([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.\-+]*)`)
 
-// Version запрашивает версию у бинарника.
+type verKey struct {
+	bin  string
+	size int64
+	mod  int64
+}
+
+var (
+	verMu    sync.Mutex
+	verCache = map[verKey]string{}
+)
+
+// Version возвращает версию бинарника. Запуск ядра на роутере небыстрый, поэтому ответ
+// запоминается, пока файл не изменился (путь, размер, время изменения).
 func Version(ctx context.Context, core, bin string) (string, error) {
+	st, err := os.Stat(bin)
+	if err != nil {
+		return queryVersion(ctx, core, bin)
+	}
+	k := verKey{bin, st.Size(), st.ModTime().UnixNano()}
+	verMu.Lock()
+	v, hit := verCache[k]
+	verMu.Unlock()
+	if hit {
+		return v, nil
+	}
+	v, err = queryVersion(ctx, core, bin)
+	if err != nil {
+		return "", err
+	}
+	verMu.Lock()
+	verCache[k] = v
+	verMu.Unlock()
+	return v, nil
+}
+
+// queryVersion запрашивает версию у бинарника.
+func queryVersion(ctx context.Context, core, bin string) (string, error) {
 	arg := "version"
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

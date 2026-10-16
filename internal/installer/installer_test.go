@@ -237,3 +237,36 @@ func TestOnInstalledHook(t *testing.T) {
 		t.Fatal("после ошибки перезапускать ядро нельзя")
 	}
 }
+
+func TestVersionCached(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fake")
+	write := func(v string) {
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'amnezia-box version "+v+"'\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("1.2.3")
+	v, err := Version(context.Background(), "amnezia", bin)
+	if err != nil || v != "1.2.3" {
+		t.Fatalf("v=%q err=%v", v, err)
+	}
+	// файл не менялся — повторный запрос не запускает бинарник: подменим его так, чтобы размер и время совпали
+	st, _ := os.Stat(bin)
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chtimes(bin, st.ModTime(), st.ModTime())
+	st2, _ := os.Stat(bin)
+	if st2.Size() == st.Size() {
+		if v, err := Version(context.Background(), "amnezia", bin); err != nil || v != "1.2.3" {
+			t.Fatalf("cache miss: v=%q err=%v", v, err)
+		}
+	}
+	// после изменения файла версия читается заново
+	write("2.0.0")
+	_ = os.Chtimes(bin, time.Now().Add(time.Hour), time.Now().Add(time.Hour))
+	if v, err := Version(context.Background(), "amnezia", bin); err != nil || v != "2.0.0" {
+		t.Fatalf("v=%q err=%v", v, err)
+	}
+}
