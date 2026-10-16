@@ -250,6 +250,6 @@ export default async function (root) {
   const unsub = st.subscribe(() => { if (alive) { drawPend(); } });
   let tick = 0;
   paint();
-  timers.push(setInterval(() => { if (!document.hidden) { refresh(); if (clashOn) { loadConns(); startTraffic(); if (++tick % 4 === 0) loadAwg(); if (tick % 8 === 0) loadProxies(); } } }, 2500));
+  timers.push(setInterval(() => { if (!document.hidden) { refresh(); if (clashOn) { tick++; if (tick % 2 === 0) loadConns(); startTraffic(); if (tick % 4 === 0) loadAwg(); if (tick % 8 === 0) loadProxies(); } } }, 2500));
   return () => { stop(); unsub(); };
 }

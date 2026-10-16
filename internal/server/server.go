@@ -205,16 +205,8 @@ func (s *Server) Handler() http.Handler {
 		s.clash(w, r)
 	})
 
-	files := http.FileServer(http.FS(web.FS()))
-	mux.Handle("/", noCache(files))
+	mux.Handle("/", newStatic(web.FS()))
 	return secure(s.localOnly(mux))
-}
-
-func noCache(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
-		h.ServeHTTP(w, r)
-	})
 }
 
 func secure(h http.Handler) http.Handler {
@@ -755,6 +747,16 @@ func (s *Server) logStream(w http.ResponseWriter, r *http.Request) {
 
 // ---------- Clash API ----------
 
+// clashTransport общий для всех запросов к ядру: раньше на каждый запрос создавался новый транспорт,
+// и на обзоре (опрос каждые несколько секунд) каждый раз открывалось новое соединение.
+var clashTransport = &http.Transport{
+	DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	MaxIdleConns:          8,
+	MaxIdleConnsPerHost:   4,
+	IdleConnTimeout:       60 * time.Second,
+	ResponseHeaderTimeout: 25 * time.Second,
+}
+
 func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 	set := s.St.Get()
 	host, port, err := net.SplitHostPort(set.General.Controller)
@@ -767,25 +769,13 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 	}
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort(host, port)}
 	secret := set.General.Secret
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		ResponseHeaderTimeout: 25 * time.Second,
-	}
 	// Таймаут на весь запрос к ядру (включая проверку задержки узла)
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	r = r.WithContext(ctx)
 	rp := &httputil.ReverseProxy{
 		FlushInterval: -1,
-		Transport:     transport,
+		Transport:     clashTransport,
 		Director: func(req *http.Request) {
 			req.URL.Scheme, req.URL.Host = target.Scheme, target.Host
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/clash")
