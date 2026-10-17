@@ -60,3 +60,15 @@ jobs:
             --title "corepanel ${{ inputs.version }}" \
             --notes "Бинарники: corepanel-linux-<arch>. Пакеты: corepanel_<версия>_<arch>_<openwrt|entware>.ipk. Какой выбрать — в README." \
             --target "${{ github.sha }}"
+
+      - name: Убрать старые релизы (остаются 3 последних)
+        if: ${{ inputs.release }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Новые сверху; всё, что ниже третьего релиза, удаляем вместе с тегами.
+          gh release list --limit 100 --json createdAt,tagName \
+            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' | while read -r t; do
+            [ -n "$t" ] && gh release delete "$t" --yes --cleanup-tag
+          done
