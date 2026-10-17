@@ -38,6 +38,7 @@ type coreState struct {
 	// а снимать нужно именно те, что были применены.
 	FwDown  string `json:"fw_down,omitempty"`
 	IfwDown string `json:"ifw_down,omitempty"`
+	NfwDown string `json:"nfw_down,omitempty"`
 	V6Down  string `json:"v6_down,omitempty"`
 }
 
@@ -81,6 +82,9 @@ func (s *Supervisor) saveStateLocked() error {
 	}
 	if s.ifw != nil {
 		st.IfwDown = s.ifw.Down
+	}
+	if s.nfw != nil {
+		st.NfwDown = s.nfw.Down
 	}
 	if s.v6 != nil {
 		st.V6Down = s.v6.Down
@@ -176,6 +180,9 @@ func (s *Supervisor) Adopt(set *model.Settings) bool {
 	if st.IfwDown != "" {
 		s.ifw = &firewall.Scripts{Down: st.IfwDown}
 	}
+	if st.NfwDown != "" {
+		s.nfw = &firewall.Scripts{Down: st.NfwDown}
+	}
 	if st.V6Down != "" {
 		s.v6 = &firewall.Scripts{Down: st.V6Down}
 	}
@@ -191,6 +198,9 @@ func (s *Supervisor) Adopt(set *model.Settings) bool {
 	done := s.done
 	if set != nil {
 		go s.refreshRuleSets(set, s.RuntimeDir(st.Core), done)
+		// Маршруты узлов-интерфейсов прежний процесс обновлял сам; его тикер умер вместе с ним, а правило
+		// могло устареть (интерфейс пересоздавался, пока панель обновлялась). Возвращаем слежение.
+		s.applyIfaceRoutesLocked(set, done)
 	}
 	go func() {
 		// подхваченное ядро — потомок этого же процесса (exec не меняет pid), поэтому его можно «пожать»;

@@ -225,3 +225,20 @@ func TestNodeIfaceRoutes(t *testing.T) {
 		t.Fatal("без узлов-интерфейсов скрипт не нужен")
 	}
 }
+
+// Диагностика должна перечислять только включённые узлы-интерфейсы и теми же таблицами и приоритетами,
+// что и генератор правил: по ним панель отличает «правило пропало» от проблем туннеля.
+func TestCheckNodeIfaceRoutes(t *testing.T) {
+	s := model.Default()
+	s.Nodes = []model.Node{{Name: "a", Type: "vless"}, {Name: "sstp", Type: "iface", BindInterface: "sstp-vpn0"}, {Name: "off", Type: "iface", BindInterface: "x0", Disabled: true}, {Name: "l2tp", Type: "iface", BindInterface: "l2tp0"}}
+	c := CheckNodeIfaceRoutes(s)
+	if len(c) != 2 {
+		t.Fatalf("нужно два узла-интерфейса, получили %+v", c)
+	}
+	if c[0].Node != "sstp" || c[0].Iface != "sstp-vpn0" || c[0].Table != 300 || c[0].Pref != 10200 {
+		t.Errorf("первый узел: %+v", c[0])
+	}
+	if c[1].Node != "l2tp" || c[1].Table != 301 || c[1].Pref != 10201 {
+		t.Errorf("второй узел: %+v", c[1])
+	}
+}

@@ -7,11 +7,12 @@ const S = st.S;
 export const TYPES = [['vless', 'VLESS'], ['vmess', 'VMess'], ['trojan', 'Trojan'], ['shadowsocks', 'Shadowsocks'], ['hysteria2', 'Hysteria2'], ['tuic', 'TUIC'], ['wireguard', 'WireGuard'], ['awg', 'AmneziaWG'], ['socks', 'SOCKS5'], ['http', 'HTTP'], ['iface', 'Системный VPN (интерфейс)']];
 const TYPE_NAME = Object.fromEntries(TYPES);
 const SS_METHODS = ['2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm', '2022-blake3-chacha20-poly1305', 'aes-128-gcm', 'aes-256-gcm', 'chacha20-ietf-poly1305', 'xchacha20-ietf-poly1305', 'none'];
-let ifacePromise = null;
 let ifList = [];
 // Выпадающий список интерфейсов: имя, состояние и адреса; текущее значение сохраняется, даже если интерфейса сейчас нет.
 const ifaceSelect = (obj, key, empty) => sel(obj, key, [['', empty || '— не выбран —'], ...ifList.map((i) => [i.name, i.name + (i.up ? '' : ' (не активен)') + ((i.addrs || []).length ? ' — ' + i.addrs.slice(0, 2).join(', ') : '')])]);
-const ifaces = () => (ifacePromise = ifacePromise || get('api/interfaces').catch(() => []));
+// Список интерфейсов запрашивается при каждом открытии формы: интерфейс VPN (например, usque-*) может
+// появиться уже после загрузки страницы, а кэш на всю сессию не давал бы его выбрать без перезагрузки.
+const ifaces = () => get('api/interfaces').catch(() => []);
 
 export default async function (root) {
   const s = S.settings;

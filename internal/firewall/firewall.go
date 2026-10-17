@@ -464,3 +464,88 @@ func (sc *Scripts) RunRefresh(ctx context.Context) {
 		_, _ = run(ctx, sc.Refresh)
 	}
 }
+
+// NodeIfaceCheck — фактическое состояние маршрута узла-интерфейса в системе. Панель показывает его в
+// диагностике, чтобы отличить «правило панели пропало» от «туннель не отвечает».
+type NodeIfaceCheck struct {
+	Node  string `json:"node"`
+	Iface string `json:"iface"`
+	Table int    `json:"table"`
+	Pref  int    `json:"pref"`
+	Rule  bool   `json:"rule"`          // правило «oif <интерфейс>» с нужным приоритетом есть в системе
+	Route bool   `json:"route"`         // в таблице есть маршрут по умолчанию через этот интерфейс
+	Out   string `json:"out,omitempty"` // что ответила система, если правила или маршрута не хватает
+}
+
+// CheckNodeIfaceRoutes проверяет, что маршруты узлов-интерфейсов действительно стоят в системе.
+func CheckNodeIfaceRoutes(s *model.Settings) []NodeIfaceCheck {
+	out := []NodeIfaceCheck{}
+	for _, nd := range s.Nodes {
+		slot := s.IfaceNodeSlot(nd.Name)
+		if nd.Type != "iface" || slot < 0 || !ifaceRe.MatchString(nd.BindInterface) {
+			continue
+		}
+		c := NodeIfaceCheck{Node: nd.Name, Iface: nd.BindInterface,
+			Table: model.IfaceNodeTableBase + slot, Pref: model.IfaceNodePrefBase + slot}
+		var ruleOut, routeOut string
+		c.Rule, ruleOut = ifaceRulePresent(nd.BindInterface, c.Pref)
+		c.Route, routeOut = ifaceRoutePresent(nd.BindInterface, c.Table)
+		if !c.Rule || !c.Route {
+			clip := func(v string) string {
+				v = strings.TrimSpace(v)
+				if v == "" {
+					v = "(пусто)"
+				}
+				if len(v) > 300 {
+					v = v[:300] + "…"
+				}
+				return v
+			}
+			parts := []string{}
+			if !c.Rule {
+				parts = append(parts, fmt.Sprintf("ip rule show pref %d -> %s", c.Pref, clip(ruleOut)))
+			}
+			if !c.Route {
+				parts = append(parts, fmt.Sprintf("ip route show table %d -> %s", c.Table, clip(routeOut)))
+			}
+			c.Out = strings.Join(parts, "\n")
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// ifaceRulePresent ищет правило «oif» с нужным приоритетом. Имя интерфейса сверяется как есть: правило
+// со старым индексом устройства после его пересоздания выводится как «oif if7» и считается пропавшим.
+func ifaceRulePresent(iface string, pref int) (bool, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// у busybox-ip нет выбора по приоритету: тогда разбираем полный список
+	script := fmt.Sprintf("ip rule show pref %d 2>/dev/null || ip rule show 2>/dev/null", pref)
+	out, err := run(ctx, script)
+	if err != nil && out == "" {
+		return false, ""
+	}
+	want, needle := fmt.Sprintf("%d:", pref), "oif "+iface+" "
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, want) && strings.Contains(l, needle) {
+			return true, ""
+		}
+	}
+	return false, out
+}
+
+// ifaceRoutePresent ищет в таблице узла маршрут по умолчанию через его интерфейс.
+func ifaceRoutePresent(iface string, table int) (bool, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, _ := run(ctx, fmt.Sprintf("ip route show table %d 2>/dev/null || true", table))
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "default") && strings.Contains(l, " dev "+iface) {
+			return true, ""
+		}
+	}
+	return false, out
+}

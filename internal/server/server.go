@@ -157,6 +157,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST", "import/url", s.importURL, true)
 	api("POST", "keygen", s.keygen, true)
 	api("GET", "interfaces", s.interfaces, true)
+	api("GET", "iface-check", s.ifaceCheck, true)
 	api("GET", "dns/system", s.dnsSystem, true)
 	api("POST", "dns/test", s.dnsTest, true)
 	api("GET", "firewall/preview", s.fwPreview, true)
@@ -457,6 +458,12 @@ func (s *Server) interfaces(w http.ResponseWriter, r *http.Request) {
 		out = append(out, x)
 	}
 	ok(w, out)
+}
+
+// ifaceCheck показывает фактические правила и маршруты узлов-интерфейсов: диагностика должна отличать
+// «панель не поставила правило» от «туннель не отвечает», не заставляя пользователя лезть в ip rule вручную.
+func (s *Server) ifaceCheck(w http.ResponseWriter, r *http.Request) {
+	ok(w, firewall.CheckNodeIfaceRoutes(s.St.Get()))
 }
 
 // ---------- настройки ----------

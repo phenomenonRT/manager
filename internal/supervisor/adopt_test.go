@@ -41,6 +41,7 @@ func TestAdoptRunningCore(t *testing.T) {
 	pid := old.Status().PID
 	old.mu.Lock()
 	old.v6 = &firewall.Scripts{Down: "true"}
+	old.nfw = &firewall.Scripts{Down: "true", Refresh: "true"}
 	old.mu.Unlock()
 	if !old.HandOver() {
 		t.Fatal("HandOver вернул false при работающем ядре")
@@ -56,6 +57,9 @@ func TestAdoptRunningCore(t *testing.T) {
 	}
 	if fresh.v6 == nil || fresh.v6.Down != "true" {
 		t.Errorf("скрипт снятия блокировки IPv6 не передан новой панели: %+v", fresh.v6)
+	}
+	if fresh.nfw == nil || fresh.nfw.Down != "true" {
+		t.Errorf("скрипт снятия маршрутов узлов-интерфейсов не передан новой панели: %+v", fresh.nfw)
 	}
 	waitFor(t, "строки ядра в логе новой панели", 3*time.Second, func() bool { return logHas(fresh, "tick ") })
 

@@ -390,6 +390,10 @@ type Issue struct {
 var reserved = map[string]bool{"direct": true, "block": true, "DIRECT": true, "REJECT": true, "PASS": true, "GLOBAL": true}
 var badNameChars = regexp.MustCompile(`[,\n\r"]`)
 
+// ifaceNameRe — допустимое имя сетевого интерфейса (как в firewall.ifaceRe): такие имена безопасно
+// подставлять в скрипты правил и в конфиг ядра. Символы вроде «;» или «$» в них невозможны.
+var ifaceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.+-]{1,15}$`)
+
 // SupportedNodeTypes — типы узлов, которые умеет собирать панель.
 var SupportedNodeTypes = []string{"vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic", "wireguard", "awg", "socks", "http", "iface"}
 
@@ -430,8 +434,11 @@ func (s *Settings) Validate() []Issue {
 			continue
 		}
 		if n.Type == "iface" {
-			if n.BindInterface == "" {
+			switch {
+			case n.BindInterface == "":
 				add("error", "узел «%s»: выберите системный интерфейс VPN (например, sstp-vpn0)", n.Name)
+			case !ifaceNameRe.MatchString(n.BindInterface):
+				add("error", "узел «%s»: «%s» не похоже на имя интерфейса — до 15 символов: латинские буквы, цифры, «.», «_», «-», «+»", n.Name, n.BindInterface)
 			}
 		} else if n.Server == "" || n.Port <= 0 || n.Port > 65535 {
 			add("error", "узел «%s»: укажите сервер и порт (1–65535)", n.Name)
@@ -519,8 +526,8 @@ func (s *Settings) Validate() []Issue {
 			continue
 		}
 		switch {
-		case f.Name == "" || len(f.Name) > 15 || strings.ContainsAny(f.Name, " /,\"'"):
-			add("error", "интерфейс «%s»: имя — до 15 символов без пробелов и слэшей", f.Name)
+		case f.Name == "" || !ifaceNameRe.MatchString(f.Name):
+			add("error", "интерфейс «%s»: имя — до 15 символов: латинские буквы, цифры, «.», «_», «-», «+» (без пробелов и слэшей)", f.Name)
 		case seenIf[f.Name] || (s.Tun.Enabled && f.Name == s.Tun.Name):
 			add("error", "интерфейс «%s»: такое имя уже занято", f.Name)
 		}

@@ -313,24 +313,7 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 
 	// маршруты узлов-интерфейсов: применяем сразу и переприменяем, пока ядро работает, — правило
 	// пропадает или устаревает, когда VPN-интерфейс появляется позже или переподключается
-	if sc := firewall.NodeIfaceRoutes(set); sc != nil {
-		s.nfw = sc
-		if err := firewall.Apply(context.Background(), sc); err != nil {
-			s.Logs.Add("[panel] маршруты узлов-интерфейсов: " + err.Error() + " (повторим автоматически)")
-		}
-		go func(sc *firewall.Scripts, done <-chan struct{}) {
-			t := time.NewTicker(15 * time.Second)
-			defer t.Stop()
-			for {
-				select {
-				case <-done:
-					return
-				case <-t.C:
-					sc.RunRefresh(context.Background())
-				}
-			}
-		}(sc, done)
-	}
+	s.applyIfaceRoutesLocked(set, done)
 	if sc := firewall.IfaceRoutes(set); sc != nil {
 		if err := firewall.Apply(context.Background(), sc); err != nil {
 			s.Logs.Add("[panel] маршруты устройств в свои интерфейсы: " + err.Error())
@@ -368,6 +351,32 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 		s.Logs.Add("[panel] состояние ядра не сохранено: " + err.Error())
 	}
 	return nil
+}
+
+// applyIfaceRoutesLocked применяет маршруты узлов-интерфейсов и следит за ними, пока ядро работает:
+// правило «oif» пропадает, когда VPN-интерфейс исчезает, и устаревает, когда он пересоздаётся с новым
+// индексом устройства. done закрывается при остановке ядра. Вызывать под s.mu.
+func (s *Supervisor) applyIfaceRoutesLocked(set *model.Settings, done <-chan struct{}) {
+	sc := firewall.NodeIfaceRoutes(set)
+	if sc == nil {
+		return
+	}
+	s.nfw = sc
+	if err := firewall.Apply(context.Background(), sc); err != nil {
+		s.Logs.Add("[panel] маршруты узлов-интерфейсов: " + err.Error() + " (повторим автоматически)")
+	}
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				sc.RunRefresh(context.Background())
+			}
+		}
+	}()
 }
 
 // rulesetFetcher скачивает текстовые наборы: напрямую (с зеркалом, если оно включено), затем через прокси ядра.
@@ -426,6 +435,10 @@ func (s *Supervisor) onExit(cmd *exec.Cmd, err error) {
 	if s.ifw != nil {
 		firewall.Remove(context.Background(), s.ifw)
 		s.ifw = nil
+	}
+	if s.nfw != nil {
+		firewall.Remove(context.Background(), s.nfw)
+		s.nfw = nil
 	}
 	if s.v6 != nil {
 		firewall.Remove(context.Background(), s.v6)
