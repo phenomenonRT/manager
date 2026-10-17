@@ -182,13 +182,43 @@ func TestNodeIfaceRoutes(t *testing.T) {
 	if sc == nil {
 		t.Fatal("nil")
 	}
-	for _, w := range []string{"ip route replace default dev sstp-vpn0 table 300", "ip rule add oif sstp-vpn0 lookup 300 pref 10200", "ip route replace default dev l2tp0 table 301", "ip rule add oif l2tp0 lookup 301 pref 10201", "ip rule del pref 10200"} {
+	for _, w := range []string{
+		"while ip rule del pref 10200", "while ip -6 rule del pref 10200",
+		"if [ -d /sys/class/net/sstp-vpn0 ]",
+		"ip route replace default dev sstp-vpn0 table 300",
+		"ip -6 route replace default dev sstp-vpn0 table 300",
+		"ip rule add oif sstp-vpn0 lookup 300 pref 10200",
+		"ip -6 rule add oif sstp-vpn0 lookup 300 pref 10200",
+		"ip route replace default dev l2tp0 table 301",
+		"ip rule add oif l2tp0 lookup 301 pref 10201",
+	} {
 		if !strings.Contains(sc.Up, w) {
 			t.Fatalf("нет %q:\n%s", w, sc.Up)
 		}
 	}
-	if strings.Contains(sc.Up, "x0") || !strings.Contains(sc.Refresh, "table 300") || strings.Contains(sc.Refresh, "ip rule") {
-		t.Fatalf("лишнее или нет refresh:\n%s\n%s", sc.Up, sc.Refresh)
+	if strings.Contains(sc.Up, "x0") {
+		t.Fatalf("отключённый узел попал в up:\n%s", sc.Up)
+	}
+	// refresh не пересоздаёт правило вслепую: сначала проверяет, что оно есть и смотрит на то же устройство,
+	// иначе после переподключения интерфейса правило указывало бы на старый индекс
+	for _, w := range []string{
+		"if [ -d /sys/class/net/sstp-vpn0 ]",
+		"grep -qE '^10200:.*oif sstp-vpn0 '",
+		"ip rule add oif sstp-vpn0 lookup 300 pref 10200",
+		"ip route replace default dev l2tp0 table 301",
+		"ip -6 rule add oif l2tp0 lookup 301 pref 10201",
+	} {
+		if !strings.Contains(sc.Refresh, w) {
+			t.Fatalf("refresh: нет %q:\n%s", w, sc.Refresh)
+		}
+	}
+	if strings.Contains(sc.Refresh, "x0") {
+		t.Fatalf("отключённый узел попал в refresh:\n%s", sc.Refresh)
+	}
+	for _, w := range []string{"while ip rule del pref 10200", "while ip -6 rule del pref 10200", "ip route flush table 300", "ip -6 route flush table 300"} {
+		if !strings.Contains(sc.Down, w) {
+			t.Fatalf("down: нет %q:\n%s", w, sc.Down)
+		}
 	}
 	s.Nodes = s.Nodes[:1]
 	if NodeIfaceRoutes(s) != nil {

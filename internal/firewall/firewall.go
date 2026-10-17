@@ -409,8 +409,11 @@ func IfaceRoutes(s *model.Settings) *Scripts {
 	return &Scripts{Up: up.String(), Down: tolerant(down.String())}
 }
 
-// NodeIfaceRoutes строит маршруты для узлов «Системный VPN (интерфейс)»: пакеты, привязанные к интерфейсу →
-// своя таблица → default через интерфейс (правило «oif», без меток). Возвращает nil, если таких узлов нет.
+// NodeIfaceRoutes строит маршруты для узлов «Системный VPN (интерфейс)»: пакеты, привязанные к интерфейсу
+// (bind_interface), уходят своей таблицей в нужный интерфейс правилом «oif» — без меток, чтобы не мешать TUN
+// с auto_redirect. Скрипты переживают отсутствие интерфейса и его пересоздание: пока интерфейса нет, они ничего
+// не делают, а Refresh возвращает правило, даже если оно указывает на старый индекс устройства.
+// Возвращает nil, если таких узлов нет.
 func NodeIfaceRoutes(s *model.Settings) *Scripts {
 	var up, down, refresh strings.Builder
 	n := 0
@@ -421,19 +424,38 @@ func NodeIfaceRoutes(s *model.Settings) *Scripts {
 		}
 		n++
 		table, pref := model.IfaceNodeTableBase+slot, model.IfaceNodePrefBase+slot
-		route := fmt.Sprintf("ip route replace default dev %s table %d 2>/dev/null || true\n", nd.BindInterface, table)
-		refresh.WriteString(route)
-		up.WriteString(route)
-		// по приоритету удаляем и правила старых версий панели (они были по метке)
+		snippet := ifaceRouteSnippet(nd.BindInterface, table, pref)
+		refresh.WriteString(snippet)
+		// по приоритету удаляем и правила старых версий панели (они были по метке), затем применяем маршруты
 		fmt.Fprintf(&up, "while ip rule del pref %d 2>/dev/null; do :; done\n", pref)
-		fmt.Fprintf(&up, "ip rule add oif %s lookup %d pref %d\n", nd.BindInterface, table, pref)
+		fmt.Fprintf(&up, "while ip -6 rule del pref %d 2>/dev/null; do :; done\n", pref)
+		up.WriteString(snippet)
 		fmt.Fprintf(&down, "while ip rule del pref %d 2>/dev/null; do :; done\n", pref)
-		fmt.Fprintf(&down, "ip route flush table %d\n", table)
+		fmt.Fprintf(&down, "while ip -6 rule del pref %d 2>/dev/null; do :; done\n", pref)
+		fmt.Fprintf(&down, "ip route flush table %d 2>/dev/null\n", table)
+		fmt.Fprintf(&down, "ip -6 route flush table %d 2>/dev/null\n", table)
 	}
 	if n == 0 {
 		return nil
 	}
 	return &Scripts{Up: up.String(), Down: tolerant(down.String()), Refresh: refresh.String()}
+}
+
+// ifaceRouteSnippet — идемпотентный рецепт маршрута через интерфейс: выполняется, только если интерфейс
+// существует (иначе применялся бы к чужому устройству); правило «oif» пересоздаётся, если пропало или
+// указывает не на тот интерфейс — так оно обновляется после пересоздания устройства с новым индексом.
+func ifaceRouteSnippet(iface string, table, pref int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "if [ -d /sys/class/net/%s ]; then\n", iface)
+	fmt.Fprintf(&b, "ip route replace default dev %s table %d 2>/dev/null || true\n", iface, table)
+	fmt.Fprintf(&b, "ip -6 route replace default dev %s table %d 2>/dev/null || true\n", iface, table)
+	for _, ip := range []string{"ip", "ip -6"} {
+		fmt.Fprintf(&b, "%s rule show pref %d 2>/dev/null | grep -qE '^%d:.*oif %s ' || "+
+			"{ while %s rule del pref %d 2>/dev/null; do :; done; %s rule add oif %s lookup %d pref %d 2>/dev/null || true; }\n",
+			ip, pref, pref, regexp.QuoteMeta(iface), ip, pref, ip, iface, table, pref)
+	}
+	b.WriteString("fi\n")
+	return b.String()
 }
 
 // Refresh повторно применяет маршруты узлов-интерфейсов (ошибки игнорируются).

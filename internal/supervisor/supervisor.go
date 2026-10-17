@@ -311,24 +311,25 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	case <-time.After(1500 * time.Millisecond):
 	}
 
+	// маршруты узлов-интерфейсов: применяем сразу и переприменяем, пока ядро работает, — правило
+	// пропадает или устаревает, когда VPN-интерфейс появляется позже или переподключается
 	if sc := firewall.NodeIfaceRoutes(set); sc != nil {
+		s.nfw = sc
 		if err := firewall.Apply(context.Background(), sc); err != nil {
-			s.Logs.Add("[panel] маршруты узлов-интерфейсов: " + err.Error())
-		} else {
-			s.nfw = sc
-			go func(sc *firewall.Scripts, done <-chan struct{}) { // маршруты пропадают, когда VPN-интерфейс переподключается
-				t := time.NewTicker(15 * time.Second)
-				defer t.Stop()
-				for {
-					select {
-					case <-done:
-						return
-					case <-t.C:
-						sc.RunRefresh(context.Background())
-					}
-				}
-			}(sc, done)
+			s.Logs.Add("[panel] маршруты узлов-интерфейсов: " + err.Error() + " (повторим автоматически)")
 		}
+		go func(sc *firewall.Scripts, done <-chan struct{}) {
+			t := time.NewTicker(15 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-t.C:
+					sc.RunRefresh(context.Background())
+				}
+			}
+		}(sc, done)
 	}
 	if sc := firewall.IfaceRoutes(set); sc != nil {
 		if err := firewall.Apply(context.Background(), sc); err != nil {
