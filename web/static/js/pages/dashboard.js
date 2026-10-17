@@ -210,19 +210,26 @@ export default async function (root) {
   }
   async function testDelay(name, url, timeout) {
     const ms = Math.min(60000, Math.max(1000, Number(timeout) || 10000));
-    // Туннели вроде WARP теряют первый пакет после простоя: для узла-интерфейса сбой повторяем один раз.
+    // Туннели вроде WARP теряют первый пакет после простоя: первая удачная проверка может включать
+    // около секунды на повторную отправку пакета. Для узла-интерфейса делаем до трёх попыток и берём
+    // лучший результат: холодный туннель успевает «разогреться», а цифра отражает реальную задержку.
     const isIface = ((S.settings && S.settings.nodes) || []).some((n) => n.name === name && n.type === 'iface');
-    for (let attempt = 0; attempt < (isIface ? 2 : 1); attempt++) {
+    const max = isIface ? 3 : 1;
+    let best = 0, lastErr = '';
+    for (let attempt = 0; attempt < max; attempt++) {
       try {
         const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=' + ms, { signal: ctl.signal });
-        delays[name] = (r && r.delay) || 0; delete delayErr[name];
-        return;
+        const d = (r && r.delay) || 0;
+        if (d > 0 && (best === 0 || d < best)) best = d;
+        if (!isIface || (best > 0 && best < 900)) break; // меньше секунды — туннель уже разогрет, хватит
       } catch (e) {
         if (!alive) return;
-        delays[name] = 0;
-        delayErr[name] = (e && e.message) || 'ошибка';
+        lastErr = (e && e.message) || 'ошибка';
       }
     }
+    if (best > 0) { delays[name] = best; delete delayErr[name]; return; }
+    delays[name] = 0;
+    if (lastErr) delayErr[name] = lastErr; else delete delayErr[name];
   }
   async function loadConns() {
     try {
