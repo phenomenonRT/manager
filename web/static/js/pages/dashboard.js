@@ -210,13 +210,18 @@ export default async function (root) {
   }
   async function testDelay(name, url, timeout) {
     const ms = Math.min(60000, Math.max(1000, Number(timeout) || 10000));
-    try {
-      const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=' + ms, { signal: ctl.signal });
-      delays[name] = (r && r.delay) || 0; delete delayErr[name];
-    } catch (e) {
-      delays[name] = 0;
-      const msg = (e && e.message) || 'ошибка';
-      delayErr[name] = msg;
+    // Туннели вроде WARP теряют первый пакет после простоя: для узла-интерфейса сбой повторяем один раз.
+    const isIface = ((S.settings && S.settings.nodes) || []).some((n) => n.name === name && n.type === 'iface');
+    for (let attempt = 0; attempt < (isIface ? 2 : 1); attempt++) {
+      try {
+        const r = await get('api/clash/proxies/' + encodeURIComponent(name) + '/delay?url=' + encodeURIComponent(url || TEST_URL) + '&timeout=' + ms, { signal: ctl.signal });
+        delays[name] = (r && r.delay) || 0; delete delayErr[name];
+        return;
+      } catch (e) {
+        if (!alive) return;
+        delays[name] = 0;
+        delayErr[name] = (e && e.message) || 'ошибка';
+      }
     }
   }
   async function loadConns() {
