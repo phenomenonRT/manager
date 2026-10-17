@@ -39,6 +39,7 @@ export default async function (root) {
         h('dt', 'PID'), h('dd', s.pid ? String(s.pid) : '—'),
         h('dt', 'Аптайм'), h('dd', run && s.uptime_sec ? fmtDur(s.uptime_sec) : '—'),
         h('dt', 'Версия'), h('dd', s.version || '—'),
+        h('dt', 'Память ядра'), h('dd', { title: 'Реально занятая память ядра сейчас (RSS). Мягкое ограничение задаётся в «Входящие, TUN, сеть» → «Общие».' }, s.mem_mb ? s.mem_mb + ' МБ' + ((S.settings.general || {}).mem_limit_mb ? ' из ' + S.settings.general.mem_limit_mb + ' МБ' : '') : '—'),
         h('dt', 'Перезапусков'), h('dd', String(s.restarts || 0))),
       s.notice ? note('', s.notice) : null,
       s.error ? errNote(h('b', 'Ошибка ядра: '), s.error) : null,

@@ -56,6 +56,9 @@ type General struct {
 	UpdateVia        string `json:"update_via"`        // через какой исходящий качать rule-set'ы
 	TCPFastOpen      bool   `json:"tcp_fast_open"`
 	TCPConcurrent    bool   `json:"tcp_concurrent"`
+	// MemLimitMB — «сколько памяти можно ядру», МБ: ядро запускается с GOMEMLIMIT, и сборщик мусора
+	// старается держать потребление ниже предела. 0 — без ограничения. В конфиг sing-box не попадает.
+	MemLimitMB int `json:"mem_limit_mb,omitempty"`
 }
 
 type Inbounds struct {
@@ -217,6 +220,12 @@ const (
 	DelayTimeoutMin     = 1000
 	DelayTimeoutMax     = 30000
 	DelayTimeoutDefault = 10000
+)
+
+// Допустимое ограничение памяти ядра (GOMEMLIMIT), МБ. 0 — не ограничивать.
+const (
+	MemLimitMinMB = 32
+	MemLimitMaxMB = 4096
 )
 
 // RuleSet — удалённый набор правил.
@@ -491,6 +500,9 @@ func (s *Settings) Validate() []Issue {
 		if r.Name == "" || r.URL == "" {
 			add("error", "набор правил: нужны имя и URL")
 		}
+	}
+	if s.General.MemLimitMB != 0 && (s.General.MemLimitMB < MemLimitMinMB || s.General.MemLimitMB > MemLimitMaxMB) {
+		add("error", "ограничение памяти ядра должно быть от %d до %d МБ (0 — без ограничения)", MemLimitMinMB, MemLimitMaxMB)
 	}
 
 	if s.Firewall.Mode == "off" && !s.Tun.Enabled {

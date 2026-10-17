@@ -95,3 +95,35 @@ func TestNodeTimeoutRange(t *testing.T) {
 		t.Error("таймаут узла 0 (как у группы) не должен давать ошибку")
 	}
 }
+
+// Ограничение памяти ядра (GOMEMLIMIT): 0 — без ограничения, иначе 32–4096 МБ.
+func TestMemLimitRange(t *testing.T) {
+	hasErr := func(s *Settings) bool {
+		for _, is := range s.Validate() {
+			if strings.Contains(is.Message, "ограничение памяти ядра") {
+				return true
+			}
+		}
+		return false
+	}
+	mk := func(mb int) *Settings {
+		s := Default()
+		s.General.MemLimitMB = mb
+		return s
+	}
+	if hasErr(mk(0)) {
+		t.Error("0 (без ограничения) не должен давать ошибку")
+	}
+	if hasErr(mk(128)) {
+		t.Error("128 МБ должен быть допустим")
+	}
+	if hasErr(mk(MemLimitMaxMB)) {
+		t.Errorf("%d МБ должен быть допустим", MemLimitMaxMB)
+	}
+	if !hasErr(mk(MemLimitMinMB - 1)) {
+		t.Error("меньше минимума — должно отклоняться")
+	}
+	if !hasErr(mk(MemLimitMaxMB + 1)) {
+		t.Errorf("больше %d МБ — должно отклоняться", MemLimitMaxMB)
+	}
+}

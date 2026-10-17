@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -80,6 +81,7 @@ type Status struct {
 	Core          string   `json:"core"`
 	PID           int      `json:"pid"`
 	UptimeSec     int64    `json:"uptime_sec"`
+	MemMB         int      `json:"mem_mb,omitempty"` // реально занятая память ядра (VmRSS из /proc)
 	Error         string   `json:"error,omitempty"`
 	FirewallError string   `json:"firewall_error,omitempty"`
 	Restarts      int      `json:"restarts"`
@@ -252,6 +254,11 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	cmd := exec.Command(bin, "run", "-c", cfgPath, "-D", dir)
 	// страховка для сборок 1.14+: не падать из-за устаревшего неявного HTTP-клиента
 	cmd.Env = append(os.Environ(), "ENABLE_DEPRECATED_IMPLICIT_DEFAULT_HTTP_CLIENT=true")
+	if mb := set.General.MemLimitMB; mb > 0 {
+		// «сколько памяти можно ядру»: мягкий предел Go-рантайма (GOMEMLIMIT) — сборщик мусора держит
+		// потребление ниже него, чтобы ядро не выело память роутера.
+		cmd.Env = append(cmd.Env, fmt.Sprintf("GOMEMLIMIT=%dMiB", mb))
+	}
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Вывод ядра идёт в файл, а не в канал: при обновлении панель заменяет себя (exec), канал бы закрылся,
@@ -580,6 +587,7 @@ func (s *Supervisor) Status() Status {
 		st.State = "running"
 		st.PID = s.cmd.Process.Pid
 		st.UptimeSec = int64(time.Since(s.startedAt).Seconds())
+		st.MemMB = procRSSMB(s.cmd.Process.Pid)
 	} else if s.waitNet {
 		st.State = "waiting"
 		why := s.waitWhy
@@ -603,6 +611,30 @@ func checkConfig(core, bin, dir, cfg string) (string, error) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(stripANSI(string(out))), err
+}
+
+// procRSSMB — реально занятая память процесса (VmRSS из /proc/<pid>/status) в МБ.
+// 0 — прочитать не удалось: панель просто не показывает память ядра.
+func procRSSMB(pid int) int {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "VmRSS:") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			return 0
+		}
+		kb, err := strconv.Atoi(f[1])
+		if err != nil {
+			return 0
+		}
+		return (kb + 512) / 1024
+	}
+	return 0
 }
 
 func writeAtomic(path string, data []byte, perm os.FileMode) error {
