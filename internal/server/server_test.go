@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"corepanel/internal/installer"
+	"corepanel/internal/model"
 	"corepanel/internal/platform"
 	"corepanel/internal/store"
 	"corepanel/internal/supervisor"
@@ -212,5 +215,37 @@ func TestUpdateEndpoints(t *testing.T) {
 	}
 	if r, _ := do(t, c, "POST", ts.URL+"/api/update/apply", "{}"); r.StatusCode != 409 {
 		t.Fatalf("apply без проверки должен отказывать: %d", r.StatusCode)
+	}
+}
+
+// Clash-API ядра отвечает «400 Bad Request» на timeout больше 32767 мс, поэтому панель молча
+// приводит запрос проверки задержки к своему пределу — даже если его послала старая страница из кеша.
+func TestClampDelayTimeout(t *testing.T) {
+	timeout := func(raw string) string {
+		t.Helper()
+		u, err := url.Parse("http://core/proxies/t/delay?" + raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clampDelayTimeout(u)
+		return u.Query().Get("timeout")
+	}
+	if got := timeout("timeout=60000&url=x"); got != strconv.Itoa(model.DelayTimeoutMax) {
+		t.Errorf("timeout=60000 → %s, ждали %d", got, model.DelayTimeoutMax)
+	}
+	if got := timeout("timeout=32768"); got != strconv.Itoa(model.DelayTimeoutMax) {
+		t.Errorf("timeout=32768 → %s, ждали %d", got, model.DelayTimeoutMax)
+	}
+	if got := timeout("timeout=15000"); got != "15000" {
+		t.Errorf("timeout=15000 → %s, значение менять не должны", got)
+	}
+	if got := timeout("timeout=0"); got != strconv.Itoa(model.DelayTimeoutMin) {
+		t.Errorf("timeout=0 → %s, ждали %d", got, model.DelayTimeoutMin)
+	}
+	if got := timeout("url=x"); got != "" {
+		t.Errorf("без параметра timeout получили %q — параметр добавлять не должны", got)
+	}
+	if got := timeout("timeout=не-число"); got != "не-число" {
+		t.Errorf("нечисловой timeout → %q, запрос менять не должны", got)
 	}
 }

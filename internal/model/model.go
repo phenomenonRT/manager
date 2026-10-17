@@ -207,10 +207,12 @@ type Group struct {
 	Timeout int `json:"timeout,omitempty"`
 }
 
-// Допустимый таймаут проверки задержки из панели, мс.
+// Допустимый таймаут проверки задержки из панели, мс. Clash-API ядра принимает timeout не больше
+// 32767 мс: при большем оно отвечает «400 Bad Request», и узел показывается как «сбой» без проверки.
+// Предел панели ниже лимита ядра с запасом.
 const (
 	DelayTimeoutMin     = 1000
-	DelayTimeoutMax     = 60000
+	DelayTimeoutMax     = 30000
 	DelayTimeoutDefault = 10000
 )
 

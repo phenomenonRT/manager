@@ -780,6 +780,7 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 	limit := 30 * time.Second
 	if strings.HasSuffix(r.URL.Path, "/delay") {
 		limit = 75 * time.Second // таймаут проверки задаётся в запросе (до model.DelayTimeoutMax)
+		clampDelayTimeout(r.URL)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), limit)
 	defer cancel()
@@ -816,4 +817,26 @@ func (s *Server) clash(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	rp.ServeHTTP(w, r)
+}
+
+// clampDelayTimeout приводит timeout запроса проверки задержки к тому, что принимает clash-API ядра:
+// больше 32767 мс оно отвечает «400 Bad Request», и узел показывается как «сбой» без проверки.
+// Страховка на случай запроса от старой страницы из кеша браузера: нынешний интерфейс всегда
+// посылает значение в пределах model.DelayTimeoutMax.
+func clampDelayTimeout(u *url.URL) {
+	q := u.Query()
+	n, err := strconv.Atoi(q.Get("timeout"))
+	if err != nil {
+		return
+	}
+	switch {
+	case n < model.DelayTimeoutMin:
+		n = model.DelayTimeoutMin
+	case n > model.DelayTimeoutMax:
+		n = model.DelayTimeoutMax
+	default:
+		return
+	}
+	q.Set("timeout", strconv.Itoa(n))
+	u.RawQuery = q.Encode()
 }

@@ -39,3 +39,31 @@ func TestTProxyRouteTableCollision(t *testing.T) {
 		t.Error("в режиме redirect таблица маршрутизации не используется — ошибки быть не должно")
 	}
 }
+
+// Clash-API ядра отвечает «400 Bad Request» на timeout больше 32767 мс, поэтому предел панели — 30 с:
+// иначе кнопка «Проверить задержку» показывала бы все узлы как «сбой», ничего не проверяя.
+func TestGroupTimeoutRange(t *testing.T) {
+	hasTimeoutErr := func(s *Settings) bool {
+		for _, is := range s.Validate() {
+			if strings.Contains(is.Message, "таймаут проверки") {
+				return true
+			}
+		}
+		return false
+	}
+	mk := func(ms int) *Settings {
+		s := Default()
+		s.Nodes = []Node{{Name: "a", Type: "socks", Server: "127.0.0.1", Port: 1080}}
+		s.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"a"}, Timeout: ms}}
+		return s
+	}
+	if hasTimeoutErr(mk(DelayTimeoutMax)) {
+		t.Errorf("таймаут %d мс должен быть допустим (предел панели)", DelayTimeoutMax)
+	}
+	if !hasTimeoutErr(mk(DelayTimeoutMax + 1000)) {
+		t.Errorf("таймаут %d мс должен отклоняться: ядро не принимает больше 32767 мс", DelayTimeoutMax+1000)
+	}
+	if hasTimeoutErr(mk(0)) {
+		t.Error("таймаут 0 (значение по умолчанию) не должен давать ошибку")
+	}
+}
