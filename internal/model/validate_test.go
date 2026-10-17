@@ -127,3 +127,31 @@ func TestMemLimitRange(t *testing.T) {
 		t.Errorf("больше %d МБ — должно отклоняться", MemLimitMaxMB)
 	}
 }
+
+// Обновление панели не должно «замораживать» конфиг из-за старых значений: Normalize приводит
+// сохранённый таймаут (до 0.1.68 допускались 60 с) к рабочему диапазону.
+func TestNormalizeClampsTimeouts(t *testing.T) {
+	s := Default()
+	s.Nodes = []Node{{Name: "a", Type: "socks", Server: "127.0.0.1", Port: 1080, Timeout: 60000}}
+	s.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"a"}, Timeout: 60000}}
+	s.Normalize()
+	if s.Groups[0].Timeout != DelayTimeoutMax {
+		t.Errorf("таймаут группы 60 с должен стать %d мс, получено %d", DelayTimeoutMax, s.Groups[0].Timeout)
+	}
+	if s.Nodes[0].Timeout != DelayTimeoutMax {
+		t.Errorf("таймаут узла 60 с должен стать %d мс, получено %d", DelayTimeoutMax, s.Nodes[0].Timeout)
+	}
+	s2 := Default()
+	s2.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"direct"}, Timeout: 200}}
+	s2.Normalize()
+	if s2.Groups[0].Timeout != DelayTimeoutMin {
+		t.Errorf("слишком малый таймаут должен стать %d мс, получено %d", DelayTimeoutMin, s2.Groups[0].Timeout)
+	}
+	if issues := s.Validate(); len(issues) > 0 {
+		for _, is := range issues {
+			if is.Level == "error" && strings.Contains(is.Message, "таймаут проверки") {
+				t.Errorf("после Normalize не должно быть ошибок про таймаут: %s", is.Message)
+			}
+		}
+	}
+}

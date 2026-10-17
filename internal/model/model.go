@@ -292,6 +292,20 @@ func Default() *Settings {
 	}
 }
 
+// clampCheckTimeout приводит таймаут проверки задержки (группы или узла) к допустимому диапазону.
+// До 0.1.68 панель позволяла задавать до 60 с, но ядро такие запросы отклоняет («400 Bad Request»),
+// и все узлы показывались как «сбой». Старые значения приводим к рабочим при загрузке и сохранении,
+// иначе проверка настроек блокировала бы сборку конфига после обновления панели.
+func clampCheckTimeout(ms int) int {
+	switch {
+	case ms > DelayTimeoutMax:
+		return DelayTimeoutMax
+	case ms > 0 && ms < DelayTimeoutMin:
+		return DelayTimeoutMin
+	}
+	return ms
+}
+
 // Normalize подставляет значения по умолчанию в пустые поля (после загрузки JSON).
 func (s *Settings) Normalize() {
 	d := Default()
@@ -392,6 +406,10 @@ func (s *Settings) Normalize() {
 				g.Interval = 180
 			}
 		}
+		g.Timeout = clampCheckTimeout(g.Timeout)
+	}
+	for i := range s.Nodes {
+		s.Nodes[i].Timeout = clampCheckTimeout(s.Nodes[i].Timeout)
 	}
 }
 
