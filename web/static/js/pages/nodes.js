@@ -34,13 +34,21 @@ export default async function (root) {
     clear(tableBox);
     if (!s.nodes.length) { tableBox.append(h('div', { class: 'empty' }, 'Узлов пока нет. Импортируйте ссылки или подписку ниже, либо добавьте узел вручную.')); return; }
     tableBox.append(h('div', { class: 'tw' }, h('table', { class: 'stack' },
-      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', 'Связь'), h('th', ''))),
+      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', 'Связь'), h('th', 'Таймаут, с'), h('th', ''))),
       h('tbody', s.nodes.map((n, i) => h('tr', { class: n.disabled ? 'off' : '' },
         h('td', h('input', { type: 'checkbox', checked: !n.disabled, 'aria-label': 'Включить ' + n.name, onchange: (e) => { n.disabled = !e.target.checked; st.touch(); drawTable(); } })),
         h('td', n.name, n.detour ? h('div', { class: 'small mute' }, '→ через ' + n.detour) : null),
         h('td', badge(TYPE_NAME[n.type] || n.type)),
         h('td', { class: 'mono' }, n.type === 'iface' ? '⇄ ' + (n.bind_interface || '—') : n.server + ':' + n.port),
         h('td', n.type === 'awg' && !n.disabled ? linkBadge(n) : null),
+        // Свой таймаут проверки задержки для узла: пусто — как у группы. Это настройка панели, в конфиг ядра не идёт.
+        h('td', { class: 'nowrap' }, h('input', {
+          type: 'number', min: 1, max: 30, step: 1, value: n.timeout ? n.timeout / 1000 : '', placeholder: 'группа',
+          style: 'width:78px;padding:4px 6px',
+          title: 'Сколько ждать ответа при проверке задержки этого узла, с (1–30). Пусто — как у группы («Группы → Параметры проверки»).',
+          'aria-label': 'Таймаут проверки узла ' + n.name,
+          oninput: (e) => { const v = parseFloat(e.target.value); n.timeout = Number.isFinite(v) && v > 0 ? Math.round(v * 1000) : 0; st.touch(); },
+        })),
         h('td', { class: 'act' },
           h('button', { class: 'btn sm', onclick: () => editNode(i) }, 'Изменить'), ' ',
           h('button', { class: 'btn sm', title: 'Дублировать', onclick: () => dup(i) }, '⧉'), ' ',

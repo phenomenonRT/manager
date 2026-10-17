@@ -159,7 +159,10 @@ type Node struct {
 
 	Detour        string `json:"detour,omitempty"`         // цепочка через другой узел
 	BindInterface string `json:"bind_interface,omitempty"` // выход через конкретный WAN
-	Disabled      bool   `json:"disabled,omitempty"`
+	// Timeout — свой таймаут проверки задержки этого узла, мс (0 — как у группы; настройка панели,
+	// в конфиг ядра не попадает). Меняется прямо в списке «Узлы и VPN».
+	Timeout  int  `json:"timeout,omitempty"`
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // AWG — параметры обфускации AmneziaWG. Нулевые значения не передаются ядру.
@@ -476,6 +479,9 @@ func (s *Settings) Validate() []Issue {
 		}
 		if n.Reality && n.PublicKey == "" {
 			add("error", "узел «%s»: для Reality нужен public key", n.Name)
+		}
+		if n.Timeout != 0 && (n.Timeout < DelayTimeoutMin || n.Timeout > DelayTimeoutMax) {
+			add("error", "узел «%s»: таймаут проверки должен быть от %d до %d с", n.Name, DelayTimeoutMin/1000, DelayTimeoutMax/1000)
 		}
 	}
 	for _, g := range s.Groups {

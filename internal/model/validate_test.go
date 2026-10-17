@@ -67,3 +67,31 @@ func TestGroupTimeoutRange(t *testing.T) {
 		t.Error("таймаут 0 (значение по умолчанию) не должен давать ошибку")
 	}
 }
+
+// Таймаут проверки можно задать и отдельному узлу (столбец «Таймаут, с» в «Узлы и VPN»):
+// 0 — как у группы. Границы те же: ядро не принимает больше 30 с.
+func TestNodeTimeoutRange(t *testing.T) {
+	hasTimeoutErr := func(s *Settings) bool {
+		for _, is := range s.Validate() {
+			if strings.Contains(is.Message, "узел «a»") && strings.Contains(is.Message, "таймаут проверки") {
+				return true
+			}
+		}
+		return false
+	}
+	mk := func(ms int) *Settings {
+		s := Default()
+		s.Nodes = []Node{{Name: "a", Type: "socks", Server: "127.0.0.1", Port: 1080, Timeout: ms}}
+		s.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"a"}}}
+		return s
+	}
+	if hasTimeoutErr(mk(DelayTimeoutMax)) {
+		t.Errorf("таймаут узла %d мс должен быть допустим", DelayTimeoutMax)
+	}
+	if !hasTimeoutErr(mk(DelayTimeoutMax + 1000)) {
+		t.Errorf("таймаут узла %d мс должен отклоняться: ядро не принимает больше 32767 мс", DelayTimeoutMax+1000)
+	}
+	if hasTimeoutErr(mk(0)) {
+		t.Error("таймаут узла 0 (как у группы) не должен давать ошибку")
+	}
+}
