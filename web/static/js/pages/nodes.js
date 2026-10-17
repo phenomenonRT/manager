@@ -84,17 +84,24 @@ export default async function (root) {
       'aria-label': 'Проверить задержку узла ' + n.name, onclick: () => checkPing(n) }, h('small', lab));
   }
 
+  // Подпись под именем: тип, адрес и состояние туннеля одной строкой — так список умещается
+  // и на телефоне (там он превращается в карточки, см. style.css).
+  function nodeMeta(n) {
+    const bits = [(TYPE_NAME[n.type] || n.type).replace(' (интерфейс)', ''), ' · ',
+      h('span', { class: 'mono' }, n.type === 'iface' ? '⇄ ' + (n.bind_interface || '—') : n.server + ':' + n.port)];
+    if (n.detour) bits.push(' · → через ', n.detour);
+    if (n.type === 'awg' && !n.disabled) bits.push(' ', linkBadge(n));
+    return bits;
+  }
+
   function drawTable() {
     clear(tableBox);
     if (!s.nodes.length) { tableBox.append(h('div', { class: 'empty' }, 'Узлов пока нет. Импортируйте ссылки или подписку ниже, либо добавьте узел вручную.')); return; }
-    tableBox.append(h('div', { class: 'tw' }, h('table', { class: 'stack' },
-      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', 'Связь'), h('th', 'Пинг'), h('th', ''))),
+    tableBox.append(h('div', { class: 'tw' }, h('table', { class: 'nodes' },
+      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Узел'), h('th', 'Пинг'), h('th', ''))),
       h('tbody', s.nodes.map((n, i) => h('tr', { class: n.disabled ? 'off' : '' },
         h('td', h('input', { type: 'checkbox', checked: !n.disabled, 'aria-label': 'Включить ' + n.name, onchange: (e) => { n.disabled = !e.target.checked; st.touch(); drawTable(); } })),
-        h('td', n.name, n.detour ? h('div', { class: 'small mute' }, '→ через ' + n.detour) : null),
-        h('td', badge(TYPE_NAME[n.type] || n.type)),
-        h('td', { class: 'mono' }, n.type === 'iface' ? '⇄ ' + (n.bind_interface || '—') : n.server + ':' + n.port),
-        h('td', n.type === 'awg' && !n.disabled ? linkBadge(n) : null),
+        h('td', h('div', { class: 'nb' }, n.name), h('div', { class: 'small mute' }, nodeMeta(n))),
         h('td', { class: 'nowrap' }, pingCell(n)),
         h('td', { class: 'act' },
           h('button', { class: 'btn sm', onclick: () => editNode(i) }, 'Изменить'), ' ',
