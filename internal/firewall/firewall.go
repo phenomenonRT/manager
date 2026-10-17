@@ -371,10 +371,12 @@ func BlockIPv6(s *model.Settings) *Scripts {
 	}
 }
 
-// IfaceRoutes строит скрипты, которые направляют устройства LAN в свои TUN-интерфейсы:
-// отдельная таблица маршрутов на интерфейс и правила «from источник». Возвращает nil, если направлять нечего.
+// IfaceRoutes строит скрипты, которые направляют устройства LAN в свои TUN-интерфейсы: отдельная таблица
+// маршрутов на интерфейс и правила «from источник». Скрипты идемпотентны и переживают пересоздание
+// устройства: пока его нет, они ничего не делают, а Refresh возвращает маршрут и правила, если пропали.
+// Возвращает nil, если направлять нечего.
 func IfaceRoutes(s *model.Settings) *Scripts {
-	var up, down strings.Builder
+	var up, down, refresh strings.Builder
 	n := 0
 	for i, f := range s.Ifaces {
 		if f.Disabled || f.Name == "" {
@@ -393,20 +395,49 @@ func IfaceRoutes(s *model.Settings) *Scripts {
 			continue
 		}
 		n++
-		table := 210 + i
+		table, pref := 210+i, 10000+i
+		snippet := ifaceSourceSnippet(f.Name, table, pref, srcs)
+		refresh.WriteString(snippet)
+		// устройство создаёт ядро чуть позже запуска панели — коротко ждём его, чтобы не откладывать маршруты
 		fmt.Fprintf(&up, "for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do ip link show %s >/dev/null 2>&1 && break; sleep 0.5; done\n", f.Name)
-		fmt.Fprintf(&up, "ip route replace default dev %s table %d\n", f.Name, table)
+		up.WriteString(snippet)
 		for _, src := range srcs {
-			fmt.Fprintf(&up, "ip rule del from %s lookup %d 2>/dev/null\n", src, table)
-			fmt.Fprintf(&up, "ip rule add from %s lookup %d pref %d\n", src, table, 10000+i)
-			fmt.Fprintf(&down, "ip rule del from %s lookup %d\n", src, table)
+			fmt.Fprintf(&down, "while ip rule del pref %d from %s 2>/dev/null; do :; done\n", pref, src)
 		}
 		fmt.Fprintf(&down, "ip route flush table %d\n", table)
 	}
 	if n == 0 {
 		return nil
 	}
-	return &Scripts{Up: up.String(), Down: tolerant(down.String())}
+	return &Scripts{Up: up.String(), Down: tolerant(down.String()), Refresh: refresh.String()}
+}
+
+// ifaceSourceSnippet — идемпотентный рецепт для «своего» интерфейса панели: пока устройства нет, ничего не
+// делаем; маршрут в таблице и правила «from источник» восстанавливаются, если пропали после пересоздания
+// устройства. Правило ищется по приоритету, источнику и таблице — существующее не пересоздаётся.
+func ifaceSourceSnippet(iface string, table, pref int, srcs []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "if [ -d /sys/class/net/%s ]; then\n", iface)
+	fmt.Fprintf(&b, "ip route replace default dev %s table %d 2>/dev/null || true\n", iface, table)
+	for _, src := range srcs {
+		patt := ruleSrcRe(src)
+		check := fmt.Sprintf("grep -qE '^%d:.*from %s .*lookup %d([^0-9]|$)'", pref, patt, table)
+		fmt.Fprintf(&b, "ip rule show pref %d 2>/dev/null | %s || ip rule show 2>/dev/null | %s || "+
+			"{ while ip rule del pref %d from %s 2>/dev/null; do :; done; "+
+			"ip rule add from %s lookup %d pref %d 2>/dev/null || true; }\n",
+			pref, check, check, pref, src, src, table, pref)
+	}
+	b.WriteString("fi\n")
+	return b.String()
+}
+
+// ruleSrcRe — как «from источник» выглядит в выводе ip rule show: у одиночного адреса маску /32 обычно не
+// печатают, поэтому она допускается необязательной.
+func ruleSrcRe(src string) string {
+	if bare := strings.TrimSuffix(src, "/32"); bare != src {
+		return regexp.QuoteMeta(bare) + "(/32)?"
+	}
+	return regexp.QuoteMeta(src)
 }
 
 // NodeIfaceRoutes строит маршруты для узлов «Системный VPN (интерфейс)»: пакеты, привязанные к интерфейсу
@@ -442,17 +473,17 @@ func NodeIfaceRoutes(s *model.Settings) *Scripts {
 }
 
 // ifaceRouteSnippet — идемпотентный рецепт маршрута через интерфейс: выполняется, только если интерфейс
-// существует (иначе применялся бы к чужому устройству); правило «oif» пересоздаётся, если пропало или
-// указывает не на тот интерфейс — так оно обновляется после пересоздания устройства с новым индексом.
+// существует (иначе применялся бы к чужому устройству); правило «oif» пересоздаётся, если пропало,
+// смотрит не на тот интерфейс или не в ту таблицу — так оно обновляется после пересоздания устройства.
 func ifaceRouteSnippet(iface string, table, pref int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "if [ -d /sys/class/net/%s ]; then\n", iface)
 	fmt.Fprintf(&b, "ip route replace default dev %s table %d 2>/dev/null || true\n", iface, table)
 	fmt.Fprintf(&b, "ip -6 route replace default dev %s table %d 2>/dev/null || true\n", iface, table)
 	for _, ip := range []string{"ip", "ip -6"} {
-		fmt.Fprintf(&b, "%s rule show pref %d 2>/dev/null | grep -qE '^%d:.*oif %s ' || "+
+		fmt.Fprintf(&b, "%s rule show pref %d 2>/dev/null | grep -qE '^%d:.*oif %s .*lookup %d([^0-9]|$)' || "+
 			"{ while %s rule del pref %d 2>/dev/null; do :; done; %s rule add oif %s lookup %d pref %d 2>/dev/null || true; }\n",
-			ip, pref, pref, regexp.QuoteMeta(iface), ip, pref, ip, iface, table, pref)
+			ip, pref, pref, regexp.QuoteMeta(iface), table, ip, pref, ip, iface, table, pref)
 	}
 	b.WriteString("fi\n")
 	return b.String()
@@ -472,14 +503,26 @@ type NodeIfaceCheck struct {
 	Iface string `json:"iface"`
 	Table int    `json:"table"`
 	Pref  int    `json:"pref"`
-	Rule  bool   `json:"rule"`          // правило «oif <интерфейс>» с нужным приоритетом есть в системе
-	Route bool   `json:"route"`         // в таблице есть маршрут по умолчанию через этот интерфейс
-	Out   string `json:"out,omitempty"` // что ответила система, если правила или маршрута не хватает
+	Rule  bool   `json:"rule"`           // правило «oif <интерфейс>» с нужным приоритетом есть в системе
+	Route bool   `json:"route"`          // в таблице есть маршрут по умолчанию через этот интерфейс
+	Tool  string `json:"tool,omitempty"` // "busybox" — системный ip не умеет правила «oif»: нужен iproute2 (ip-full)
+	Out   string `json:"out,omitempty"`  // что ответила система, если правила или маршрута не хватает
 }
 
 // CheckNodeIfaceRoutes проверяет, что маршруты узлов-интерфейсов действительно стоят в системе.
 func CheckNodeIfaceRoutes(s *model.Settings) []NodeIfaceCheck {
 	out := []NodeIfaceCheck{}
+	ipTool, ipToolDone := "", false
+	// busybox спрашиваем один раз и только когда правило действительно отсутствует
+	ipIsBusybox := func() bool {
+		if !ipToolDone {
+			ipToolDone = true
+			if busyboxIP() {
+				ipTool = "busybox"
+			}
+		}
+		return ipTool == "busybox"
+	}
 	for _, nd := range s.Nodes {
 		slot := s.IfaceNodeSlot(nd.Name)
 		if nd.Type != "iface" || slot < 0 || !ifaceRe.MatchString(nd.BindInterface) {
@@ -490,6 +533,9 @@ func CheckNodeIfaceRoutes(s *model.Settings) []NodeIfaceCheck {
 		var ruleOut, routeOut string
 		c.Rule, ruleOut = ifaceRulePresent(nd.BindInterface, c.Pref)
 		c.Route, routeOut = ifaceRoutePresent(nd.BindInterface, c.Table)
+		if !c.Rule && ipIsBusybox() {
+			c.Tool = "busybox"
+		}
 		if !c.Rule || !c.Route {
 			clip := func(v string) string {
 				v = strings.TrimSpace(v)
@@ -548,4 +594,13 @@ func ifaceRoutePresent(iface string, table int) (bool, string) {
 		}
 	}
 	return false, out
+}
+
+// busyboxIP сообщает, что системный ip — из busybox (или ip не установлен вовсе): такой ip не умеет
+// правила «oif», поэтому для узлов-интерфейсов нужен iproute2 — на OpenWrt это пакет ip-full.
+func busyboxIP() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, _ := run(ctx, "ip -V 2>&1 || true")
+	return !strings.Contains(out, "iproute2")
 }

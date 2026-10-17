@@ -125,7 +125,12 @@ func TestIfaceRoutes(t *testing.T) {
 	if sc == nil {
 		t.Fatal("nil")
 	}
-	for _, w := range []string{"ip route replace default dev vpn1 table 210", "ip rule add from 192.168.1.50/32 lookup 210", "ip rule add from 192.168.1.64/28 lookup 210"} {
+	for _, w := range []string{
+		"ip route replace default dev vpn1 table 210",
+		"ip rule add from 192.168.1.50/32 lookup 210 pref 10000",
+		"ip rule add from 192.168.1.64/28 lookup 210 pref 10000",
+		"grep -qE '^10000:.*from 192\\.168\\.1\\.50(/32)? .*lookup 210([^0-9]|$)'",
+	} {
 		if !strings.Contains(sc.Up, w) {
 			t.Fatalf("нет %q:\n%s", w, sc.Up)
 		}
@@ -133,8 +138,17 @@ func TestIfaceRoutes(t *testing.T) {
 	if strings.Contains(sc.Up, "evil") || strings.Contains(sc.Up, "fe80") || strings.Contains(sc.Up, "vpn2") {
 		t.Fatalf("лишнее:\n%s", sc.Up)
 	}
-	if !strings.Contains(sc.Down, "ip rule del from 192.168.1.50/32 lookup 210") {
+	if !strings.Contains(sc.Down, "while ip rule del pref 10000 from 192.168.1.50/32 2>/dev/null; do :; done") {
 		t.Fatal(sc.Down)
+	}
+	if !strings.Contains(sc.Down, "ip route flush table 210") {
+		t.Fatal(sc.Down)
+	}
+	// refresh возвращает маршрут и правила, если устройство пересоздали и они пропали
+	for _, w := range []string{"ip route replace default dev vpn1 table 210", "ip rule add from 192.168.1.64/28 lookup 210 pref 10000", "if [ -d /sys/class/net/vpn1 ]"} {
+		if !strings.Contains(sc.Refresh, w) {
+			t.Fatalf("refresh: нет %q:\n%s", w, sc.Refresh)
+		}
 	}
 	s.Ifaces = nil
 	if IfaceRoutes(s) != nil {
@@ -203,7 +217,7 @@ func TestNodeIfaceRoutes(t *testing.T) {
 	// иначе после переподключения интерфейса правило указывало бы на старый индекс
 	for _, w := range []string{
 		"if [ -d /sys/class/net/sstp-vpn0 ]",
-		"grep -qE '^10200:.*oif sstp-vpn0 '",
+		"grep -qE '^10200:.*oif sstp-vpn0 .*lookup 300([^0-9]|$)'",
 		"ip rule add oif sstp-vpn0 lookup 300 pref 10200",
 		"ip route replace default dev l2tp0 table 301",
 		"ip -6 rule add oif l2tp0 lookup 301 pref 10201",

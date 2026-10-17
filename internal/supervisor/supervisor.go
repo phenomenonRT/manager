@@ -311,17 +311,10 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	case <-time.After(1500 * time.Millisecond):
 	}
 
-	// маршруты узлов-интерфейсов: применяем сразу и переприменяем, пока ядро работает, — правило
-	// пропадает или устаревает, когда VPN-интерфейс появляется позже или переподключается
-	s.applyIfaceRoutesLocked(set, done)
-	if sc := firewall.IfaceRoutes(set); sc != nil {
-		if err := firewall.Apply(context.Background(), sc); err != nil {
-			s.Logs.Add("[panel] маршруты устройств в свои интерфейсы: " + err.Error())
-		} else {
-			s.ifw = sc
-			s.Logs.Add("[panel] устройства направлены в свои интерфейсы")
-		}
-	}
+	// маршруты: применяем сразу и переприменяем, пока ядро работает, — правило «oif» пропадает или
+	// устаревает, когда VPN-интерфейс появляется позже или переподключается, а маршрут в таблице
+	// «своего» интерфейса исчезает вместе с устройством
+	s.startRouteWatchesLocked(set, done)
 	if sc := firewall.BlockIPv6(set); sc != nil {
 		if err := firewall.Apply(context.Background(), sc); err != nil {
 			s.Logs.Add("[panel] блокировка IPv6: " + err.Error())
@@ -353,17 +346,32 @@ func (s *Supervisor) startLocked(set *model.Settings, userInitiated bool) error 
 	return nil
 }
 
-// applyIfaceRoutesLocked применяет маршруты узлов-интерфейсов и следит за ними, пока ядро работает:
-// правило «oif» пропадает, когда VPN-интерфейс исчезает, и устаревает, когда он пересоздаётся с новым
-// индексом устройства. done закрывается при остановке ядра. Вызывать под s.mu.
-func (s *Supervisor) applyIfaceRoutesLocked(set *model.Settings, done <-chan struct{}) {
-	sc := firewall.NodeIfaceRoutes(set)
-	if sc == nil {
-		return
+// startRouteWatchesLocked применяет маршруты узлов-интерфейсов и «своих» интерфейсов панели и ставит оба
+// набора на периодическую проверку. done закрывается при остановке ядра. Вызывать под s.mu.
+func (s *Supervisor) startRouteWatchesLocked(set *model.Settings, done <-chan struct{}) {
+	if sc := firewall.NodeIfaceRoutes(set); sc != nil {
+		s.nfw = sc
+		s.watchRoutesLocked(sc, done, "маршруты узлов-интерфейсов")
 	}
-	s.nfw = sc
-	if err := firewall.Apply(context.Background(), sc); err != nil {
-		s.Logs.Add("[panel] маршруты узлов-интерфейсов: " + err.Error() + " (повторим автоматически)")
+	if sc := firewall.IfaceRoutes(set); sc != nil {
+		s.ifw = sc
+		if s.watchRoutesLocked(sc, done, "маршруты устройств в свои интерфейсы") == nil {
+			s.Logs.Add("[panel] устройства направлены в свои интерфейсы")
+		}
+	}
+}
+
+// watchRoutesLocked применяет скрипты маршрутов и повторяет их, пока ядро работает: правило «oif» пропадает,
+// когда VPN-интерфейс исчезает, и устаревает, когда он пересоздаётся с новым индексом; маршрут в таблице
+// «своего» интерфейса пропадает вместе с устройством. Ошибки применения не считаются сбоем — следующая
+// проверка восстановит правила. Вызывать под s.mu.
+func (s *Supervisor) watchRoutesLocked(sc *firewall.Scripts, done <-chan struct{}, label string) error {
+	err := firewall.Apply(context.Background(), sc)
+	if err != nil {
+		s.Logs.Add("[panel] " + label + ": " + err.Error() + " (повторим автоматически)")
+	}
+	if sc.Refresh == "" {
+		return err
 	}
 	go func() {
 		t := time.NewTicker(15 * time.Second)
@@ -377,6 +385,7 @@ func (s *Supervisor) applyIfaceRoutesLocked(set *model.Settings, done <-chan str
 			}
 		}
 	}()
+	return err
 }
 
 // rulesetFetcher скачивает текстовые наборы: напрямую (с зеркалом, если оно включено), затем через прокси ядра.

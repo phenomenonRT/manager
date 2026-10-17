@@ -545,6 +545,36 @@ func (s *Settings) Validate() []Issue {
 			add("error", "интерфейс «%s»: выход «%s» не существует — выберите узел или группу", f.Name, f.Outbound)
 		}
 	}
+	if s.Firewall.Mode == "tproxy" {
+		// панель сама занимает таблицы 210+N под «свои» интерфейсы и 300+N под узлы-интерфейсы: если
+		// tproxy смотрит в занятую таблицу, помеченные пакеты уйдут не в «local dev lo», а в VPN,
+		// и либо tproxy, либо маршрутизация этих интерфейсов молча сломается
+		used := map[int]string{}
+		for i, f := range s.Ifaces {
+			if f.Disabled {
+				continue
+			}
+			for _, src := range f.Sources {
+				src = strings.TrimSpace(src)
+				if ip := net.ParseIP(src); ip != nil && ip.To4() != nil {
+					used[210+i] = "интерфейс «" + f.Name + "»"
+					break
+				}
+				if _, nw, err := net.ParseCIDR(src); err == nil && nw.IP.To4() != nil {
+					used[210+i] = "интерфейс «" + f.Name + "»"
+					break
+				}
+			}
+		}
+		for _, n := range s.Nodes {
+			if slot := s.IfaceNodeSlot(n.Name); slot >= 0 && ifaceNameRe.MatchString(n.BindInterface) {
+				used[IfaceNodeTableBase+slot] = "узел «" + n.Name + "» (системный VPN-интерфейс)"
+			}
+		}
+		if who := used[s.Firewall.RouteTable]; who != "" {
+			add("error", "таблица маршрутизации %d для tproxy занята панелью (%s) — выберите другую (обычно 100)", s.Firewall.RouteTable, who)
+		}
+	}
 	if !exists(s.Final) {
 		add("error", "исходящий по умолчанию «%s» не существует", s.Final)
 	}
