@@ -1,7 +1,7 @@
 import { apd, h, clear, pageHead, badge, note, field, fgrid, txt, num, pw, lines, csv, sel, chk, area, modal, confirmBox, toast, toastErr, help } from '../ui.js';
 import { get, post } from '../api.js';
 import * as st from '../state.js';
-import { loadAwgStates, awgBadge } from '../awgstatus.js';
+import { loadAwgStates, awgBadge, delayClass } from '../awgstatus.js';
 
 const S = st.S;
 export const TYPES = [['vless', 'VLESS'], ['vmess', 'VMess'], ['trojan', 'Trojan'], ['shadowsocks', 'Shadowsocks'], ['hysteria2', 'Hysteria2'], ['tuic', 'TUIC'], ['wireguard', 'WireGuard'], ['awg', 'AmneziaWG'], ['socks', 'SOCKS5'], ['http', 'HTTP'], ['iface', 'Системный VPN (интерфейс)']];
@@ -30,25 +30,72 @@ export default async function (root) {
   }
   if (S.status && S.status.state === 'running' && s.nodes.some((n) => n.type === 'awg')) loadAwgStates(get).then((r) => { awgState = r; drawTable(); }).catch(() => { awgState = {}; drawTable(); });
 
+  // ---- Пинг узлов ----
+  // Показываем задержку из проверок ядра (как чипы на обзоре): история группы обновляется фоновой
+  // проверкой раз в интервал группы, а клик по значению проверяет узел прямо здесь и сразу.
+  const delays = {}, delayErr = {}, hist = {}, busyPing = {};
+  const TEST_URL = 'https://www.gstatic.com/generate_204';
+  let pingsAlive = true, pingT = 0;
+  async function loadPings() {
+    try {
+      const r = await get('api/clash/proxies');
+      const list = (r && r.proxies) || {};
+      for (const n of s.nodes) {
+        const p = list[n.name];
+        const hlast = p && p.history && p.history.length ? p.history[p.history.length - 1] : null;
+        if (hlast && hlast.delay > 0) hist[n.name] = hlast.delay; else delete hist[n.name];
+      }
+      if (pingsAlive) drawTable();
+    } catch (e) { /* ядро остановлено — покажем прочерки */ }
+  }
+  // Настройки проверки берём у первой не-selector группы, где есть узел (адрес и таймаут, как на обзоре).
+  const pingCfg = (name) => (s.groups || []).find((g) => g.type && g.type !== 'selector' && (g.members || []).includes(name)) || null;
+  // Проверка задержки: предел панели 30 с (ядро не принимает больше), для узла-интерфейса до трёх
+  // попыток — туннели вроде WARP теряют первый пакет после простоя, берём лучший результат.
+  async function checkPing(n) {
+    const cfg = pingCfg(n.name);
+    const url = (cfg && cfg.url) || TEST_URL;
+    const ms = Math.min(30000, Math.max(1000, Number(cfg && cfg.timeout) || 10000));
+    busyPing[n.name] = true; drawTable();
+    const max = n.type === 'iface' ? 3 : 1;
+    let best = 0, lastErr = '';
+    for (let attempt = 0; attempt < max; attempt++) {
+      try {
+        const r = await get('api/clash/proxies/' + encodeURIComponent(n.name) + '/delay?url=' + encodeURIComponent(url) + '&timeout=' + ms);
+        const d = (r && r.delay) || 0;
+        if (d > 0 && (best === 0 || d < best)) best = d;
+        if (n.type !== 'iface' || (best > 0 && best < 900)) break; // меньше секунды — туннель уже разогрет, хватит
+      } catch (e) { lastErr = (e && e.message) || 'ошибка'; }
+    }
+    if (!pingsAlive) return;
+    busyPing[n.name] = false;
+    if (best > 0) { delays[n.name] = best; delete delayErr[n.name]; }
+    else { delays[n.name] = 0; delayErr[n.name] = lastErr || 'нет ответа'; toast('Узел «' + n.name + '» не ответил: ' + delayErr[n.name], 'err'); }
+    drawTable();
+  }
+  function pingCell(n) {
+    const running = S.status && S.status.state === 'running' && !n.disabled;
+    const d = delays[n.name] !== undefined ? delays[n.name] : hist[n.name];
+    const lab = busyPing[n.name] ? '…' : d === undefined ? '—' : d > 0 ? d + ' мс' : 'сбой';
+    if (!running) return h('span', { class: 'small mute', title: n.disabled ? 'Узел выключен' : 'Ядро не запущено' }, '—');
+    const title = (delayErr[n.name] ? 'Ошибка проверки: ' + delayErr[n.name] + '. ' : '') +
+      'Задержка из последних проверок. Нажмите, чтобы проверить сейчас.';
+    return h('button', { type: 'button', class: 'chip ' + delayClass(d), disabled: !!busyPing[n.name], title,
+      'aria-label': 'Проверить задержку узла ' + n.name, onclick: () => checkPing(n) }, h('small', lab));
+  }
+
   function drawTable() {
     clear(tableBox);
     if (!s.nodes.length) { tableBox.append(h('div', { class: 'empty' }, 'Узлов пока нет. Импортируйте ссылки или подписку ниже, либо добавьте узел вручную.')); return; }
     tableBox.append(h('div', { class: 'tw' }, h('table', { class: 'stack' },
-      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', 'Связь'), h('th', 'Таймаут, с'), h('th', ''))),
+      h('thead', h('tr', h('th', 'Вкл'), h('th', 'Имя'), h('th', 'Тип'), h('th', 'Сервер:порт'), h('th', 'Связь'), h('th', 'Пинг'), h('th', ''))),
       h('tbody', s.nodes.map((n, i) => h('tr', { class: n.disabled ? 'off' : '' },
         h('td', h('input', { type: 'checkbox', checked: !n.disabled, 'aria-label': 'Включить ' + n.name, onchange: (e) => { n.disabled = !e.target.checked; st.touch(); drawTable(); } })),
         h('td', n.name, n.detour ? h('div', { class: 'small mute' }, '→ через ' + n.detour) : null),
         h('td', badge(TYPE_NAME[n.type] || n.type)),
         h('td', { class: 'mono' }, n.type === 'iface' ? '⇄ ' + (n.bind_interface || '—') : n.server + ':' + n.port),
         h('td', n.type === 'awg' && !n.disabled ? linkBadge(n) : null),
-        // Свой таймаут проверки задержки для узла: пусто — как у группы. Это настройка панели, в конфиг ядра не идёт.
-        h('td', { class: 'nowrap' }, h('input', {
-          type: 'number', min: 1, max: 30, step: 1, value: n.timeout ? n.timeout / 1000 : '', placeholder: 'группа',
-          style: 'width:78px;padding:4px 6px',
-          title: 'Сколько ждать ответа при проверке задержки этого узла, с (1–30). Пусто — как у группы («Группы → Параметры проверки»).',
-          'aria-label': 'Таймаут проверки узла ' + n.name,
-          oninput: (e) => { const v = parseFloat(e.target.value); n.timeout = Number.isFinite(v) && v > 0 ? Math.round(v * 1000) : 0; st.touch(); },
-        })),
+        h('td', { class: 'nowrap' }, pingCell(n)),
         h('td', { class: 'act' },
           h('button', { class: 'btn sm', onclick: () => editNode(i) }, 'Изменить'), ' ',
           h('button', { class: 'btn sm', title: 'Дублировать', onclick: () => dup(i) }, '⧉'), ' ',
@@ -121,6 +168,8 @@ export default async function (root) {
       impRes),
     vpnBox);
   redraw();
+  loadPings();
+  pingT = setInterval(loadPings, 15000);
 
   // ---- редактор узла ----
   async function editNode(idx, type) {
@@ -152,6 +201,9 @@ export default async function (root) {
       }],
     });
   }
+
+  // При уходе со страницы останавливаем опрос задержек.
+  return () => { pingsAlive = false; clearInterval(pingT); };
 }
 
 function defaults(d) {

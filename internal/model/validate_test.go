@@ -68,34 +68,6 @@ func TestGroupTimeoutRange(t *testing.T) {
 	}
 }
 
-// Таймаут проверки можно задать и отдельному узлу (столбец «Таймаут, с» в «Узлы и VPN»):
-// 0 — как у группы. Границы те же: ядро не принимает больше 30 с.
-func TestNodeTimeoutRange(t *testing.T) {
-	hasTimeoutErr := func(s *Settings) bool {
-		for _, is := range s.Validate() {
-			if strings.Contains(is.Message, "узел «a»") && strings.Contains(is.Message, "таймаут проверки") {
-				return true
-			}
-		}
-		return false
-	}
-	mk := func(ms int) *Settings {
-		s := Default()
-		s.Nodes = []Node{{Name: "a", Type: "socks", Server: "127.0.0.1", Port: 1080, Timeout: ms}}
-		s.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"a"}}}
-		return s
-	}
-	if hasTimeoutErr(mk(DelayTimeoutMax)) {
-		t.Errorf("таймаут узла %d мс должен быть допустим", DelayTimeoutMax)
-	}
-	if !hasTimeoutErr(mk(DelayTimeoutMax + 1000)) {
-		t.Errorf("таймаут узла %d мс должен отклоняться: ядро не принимает больше 32767 мс", DelayTimeoutMax+1000)
-	}
-	if hasTimeoutErr(mk(0)) {
-		t.Error("таймаут узла 0 (как у группы) не должен давать ошибку")
-	}
-}
-
 // Ограничение памяти ядра (GOMEMLIMIT): 0 — без ограничения, иначе 32–4096 МБ.
 func TestMemLimitRange(t *testing.T) {
 	hasErr := func(s *Settings) bool {
@@ -132,14 +104,11 @@ func TestMemLimitRange(t *testing.T) {
 // сохранённый таймаут (до 0.1.68 допускались 60 с) к рабочему диапазону.
 func TestNormalizeClampsTimeouts(t *testing.T) {
 	s := Default()
-	s.Nodes = []Node{{Name: "a", Type: "socks", Server: "127.0.0.1", Port: 1080, Timeout: 60000}}
+	s.Nodes = []Node{{Name: "a", Type: "socks", Server: "127.0.0.1", Port: 1080}}
 	s.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"a"}, Timeout: 60000}}
 	s.Normalize()
 	if s.Groups[0].Timeout != DelayTimeoutMax {
 		t.Errorf("таймаут группы 60 с должен стать %d мс, получено %d", DelayTimeoutMax, s.Groups[0].Timeout)
-	}
-	if s.Nodes[0].Timeout != DelayTimeoutMax {
-		t.Errorf("таймаут узла 60 с должен стать %d мс, получено %d", DelayTimeoutMax, s.Nodes[0].Timeout)
 	}
 	s2 := Default()
 	s2.Groups = []Group{{Name: "g", Type: "urltest", Members: []string{"direct"}, Timeout: 200}}
